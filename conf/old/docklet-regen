@@ -1,0 +1,91 @@
+#!/bin/bash
+
+
+. /etc/docklet/docklet.conf
+
+[[ "`whoami`" != "root" ]] && echo "Root previledge required!" && exit 1
+
+[[ "${NAT_ID}" == "" ]] && echo "NAT_ID not specified!" && exit 1
+[[ "${USER_NAME}" == "" ]] && echo "USER_NAME not specified!" && exit 1
+
+STATE=$(KEY=/docklet/instances/${NAT_ID} etcdemu get)
+
+[[ "${STATE}" == "" ]] && exit 1
+
+OWNER=$(echo ${STATE} | awk -F\| '{print $1}')
+
+[[ "${OWNER}" != "${USER_NAME}" ]] && exit 1
+
+CLUSTERS=$(echo ${STATE} | awk -F\| '{print $4}')
+
+if [[ "${CMD}" == "repair" ]]; then
+	NAT_ID=${NAT_ID} USER_NAME=${USER_NAME} stone >/dev/null
+	
+	for INSTANCE in ${CLUSTERS}; do
+		SAT=$(echo ${INSTANCE} | awk -F\: '{print $1}')
+		ID=$(echo ${INSTANCE} | awk -F\: '{print $2}')
+		CIDR=$(echo ${INSTANCE} | awk -F\: '{print $3}')
+		nohup ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no ${SAT} "! docklet-weave find ${ID} && docklet-weave restart ${ID}" >/dev/null &
+	done
+elif [[ "${CMD}" == "restart" ]]; then
+	NAT_ID=${NAT_ID} USER_NAME=${USER_NAME} stone >/dev/null
+	
+	for INSTANCE in ${CLUSTERS}; do
+		SAT=$(echo ${INSTANCE} | awk -F\: '{print $1}')
+		ID=$(echo ${INSTANCE} | awk -F\: '{print $2}')
+		CIDR=$(echo ${INSTANCE} | awk -F\: '{print $3}')
+		nohup ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no ${SAT} "docklet-weave restart ${ID}" >/dev/null &
+	done
+else
+	SLAVES=$(echo ${CLUSTERS} | awk '{$NF="";print}')
+	MASTER=$(echo ${CLUSTERS} | awk '{print $NF}')
+	WORK_ON=$(echo ${MASTER} | awk -F\: '{print $1}')
+	
+	IMAGE=$(echo ${STATE} | awk -F\| '{print $2}')
+	
+	let OFFSET=$(echo ${SLAVES} | wc -w)+1
+	NATIVE_IP=$(echo ${MASTER} | awk -F\: '{print $3}' | awk -F\. '{$NF='${OFFSET}'; print}' | tr \  .)
+	export USER_NAME IMAGE
+	
+	HOST_NAME=nat-slave${OFFSET}
+
+	COMMON_HOST="${NFS_PREFIX}/global/users/${USER_NAME}/hosts-${NAT_ID}"
+	
+	if [[ "${CMD}" == "push" ]]; then
+		[[ "`echo ${SLAVES} | wc -w`" == "${SLAVE_LIMIT}" ]] && exit 1
+
+		echo "${NATIVE_IP} ${HOST_NAME}" >> ${COMMON_HOST}
+
+		CONTAINER_ID=${USER_NAME}-${NAT_ID}-${OFFSET}
+		
+		docklet-weave node ${CONTAINER_ID} # ${WORK_ON}
+		
+		NEW_CLUSTER="${SLAVES}${THIS_HOST}:${CONTAINER_ID}:${NATIVE_IP}:${HOST_NAME} ${MASTER}"
+		NEW_STATE=$(echo ${STATE} | awk -F\| '{$NF="";print}' | tr \  \|)${NEW_CLUSTER}
+		KEY=/docklet/instances/${NAT_ID} VALUE=${NEW_STATE} etcdemu set
+		echo "${NATIVE_IP} ${THIS_HOST} ${CONTAINER_ID} ${HOST_NAME}"
+
+	elif [[ "${CMD}" == "pop" ]]; then
+
+		[[ "`echo ${SLAVES} | wc -w`" == "0" ]] && exit 1
+		
+		DETAIL=$(echo ${SLAVES} | awk '{print $NF}')
+		SAT=$(echo ${DETAIL} | awk -F\: '{print $1}')
+		ID=$(echo ${DETAIL} | awk -F\: '{print $2}')
+		IP=$(echo ${DETAIL} | awk -F\: '{print $3}')
+		HOST=$(echo ${DETAIL} | awk -F\: '{print $4}')
+
+		WIPE_CONTENT=`cat ${COMMON_HOST} | head -n -1`
+		echo "${WIPE_CONTENT}" > ${COMMON_HOST}
+
+		nohup ssh -o StrictHostKeyChecking=no ${SAT} "docklet-weave stop ${ID}" >/dev/null 2>&1 &
+		
+		NEW_STATE=$(echo ${STATE} | awk -F\| '{$NF="";print}' | tr \  \|)$(echo ${SLAVES} | awk '{$NF=""; print}')${MASTER}
+		KEY=/docklet/instances/${NAT_ID} VALUE=${NEW_STATE} etcdemu set >/dev/null 2>&1
+		
+		NAT_ID=${NAT_ID} USER_NAME=${USER_NAME} stone >/dev/null 2>&1
+		
+		echo "${IP} ${SAT} ${ID} ${HOST}"
+	fi
+fi
+

@@ -1,0 +1,30 @@
+#!/bin/bash
+
+
+. /etc/docklet/docklet.conf
+
+[[ "`whoami`" != "root" ]] && echo "Root previledge required!" && exit 1
+
+[[ "${USER_NAME}" == "" ]] && echo "USER_NAME not specified!" && exit 1
+
+mkdir -p ${NFS_PREFIX}/global/users/${USER_NAME}/home/.ssh/ ${NFS_PREFIX}/global/users/${USER_NAME}/ssh_keys
+
+mkdir -p ${NFS_PREFIX}/global/users/${USER_NAME}/home/submit ${NFS_PREFIX}/global/users/${USER_NAME}/home/upload
+
+if [[ ! -e "${NFS_PREFIX}/global/users/${USER_NAME}/ssh_keys/init.pass" ]] || [[ "$@" == "update" ]]; then
+	rm -rf ${NFS_PREFIX}/global/users/${USER_NAME}/ssh_keys/*
+	uuidgen | cut -b 1-6 > "${NFS_PREFIX}/global/users/${USER_NAME}/ssh_keys/init.pass"
+	echo -e '\n' | ssh-keygen -t rsa -P '' -f "${NFS_PREFIX}/global/users/${USER_NAME}/ssh_keys/id_rsa" >/dev/null 2>&1
+	mv "${NFS_PREFIX}/global/users/${USER_NAME}/ssh_keys/id_rsa.pub" "${NFS_PREFIX}/global/users/${USER_NAME}/ssh_keys/authorized_keys"
+fi
+
+if [[ -e "${NFS_PREFIX}/global/users/${USER_NAME}/ssh_keys/vnc_hash" ]]; then
+	DATA="`cat ${NFS_PREFIX}/global/users/${USER_NAME}/ssh_keys/vnc_hash`"
+	echo -e "${DATA}\n${DATA}\n" | vncpasswd ${NFS_PREFIX}/global/users/${USER_NAME}/ssh_keys/vnc_pass >/dev/null 2>&1
+fi
+
+cat "${NFS_PREFIX}/global/users/${USER_NAME}/ssh_keys/id_rsa"
+echo -n "========"
+echo "[reserved]"
+echo -n "========"
+cat "${NFS_PREFIX}/global/users/${USER_NAME}/ssh_keys/init.pass"

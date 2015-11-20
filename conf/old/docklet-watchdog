@@ -1,0 +1,27 @@
+#!/bin/bash
+
+. /etc/docklet/docklet.conf
+
+HOST=`cat ${NFS_PREFIX}/local/network 2>/dev/null`
+
+if [[ "`whoami`" == "root" ]] && [[ "${HOST}" != "" ]]; then
+	
+	LEADER=$(curl -L http://0.0.0.0:4001/v2/stats/leader 2>/dev/null | python -m json.tool 2>/dev/null | grep leader | awk -F\" '{print $4}')
+	
+	if [[ "${LEADER}" == "${HOST}" ]]; then
+		echo "* ${HOST}: I'm leader" > /dev/stderr
+		if ! docklet-weave find core-service ; then
+			#echo "* ${HOST}: starting core-service .. (If service is in local deploy mode, try: test-docklet )" > /dev/stderr
+			
+			#HOST=${HOST} docklet-weave bridge core-service
+			
+		fi
+		sleep 20
+	else
+		echo "* ${HOST}: I'm not leader" > /dev/stderr
+		#lxc-stop -k -n core-service >/dev/null 2>&1 || true
+		sleep 10
+	fi
+	
+fi
+

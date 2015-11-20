@@ -1,0 +1,36 @@
+#!/bin/bash
+
+. /etc/docklet/docklet.conf
+
+function log {
+	echo -e "\033[34m$@\033[0m\n"
+}
+
+clear
+
+log "# This is standard login interface:"
+curl -H "Auth:docklet/docklet" "http://0.0.0.0:8000/user/login"
+echo ; read -p 'Press [Enter] to continue ..' ; clear
+
+log "# Creating clusters:"
+curl -F user=docklet -F key=docklet "http://0.0.0.0:8000/clusters/create"
+echo ; read -p 'Press [Enter] to continue ..' ; clear
+
+log "# Cluster information:"
+curl -F user=docklet -F key=docklet "http://0.0.0.0:8000/clusters"
+echo ; read -p 'Press [Enter] to continue ..' ; clear
+
+log "# Scaling clusters:"
+curl -F user=docklet -F key=docklet "http://0.0.0.0:8000/clusters/1/scaleout"
+echo ; read -p 'Press [Enter] to continue ..' ; clear
+
+log "# Try login clusters, nodes size should be 2:"
+ssh root@10.10.1.0 -i ${NFS_PREFIX}/global/users/docklet/ssh_keys/id_rsa docklet status
+ssh root@10.10.1.0 -i ${NFS_PREFIX}/global/users/docklet/ssh_keys/id_rsa
+clear
+
+log "# Remove clusters:"
+ssh root@10.10.1.0 -i ${NFS_PREFIX}/global/users/docklet/ssh_keys/id_rsa docklet remove
+echo ; read -p 'Press [Enter] to continue ..' ; clear
+
+echo "All tests done."

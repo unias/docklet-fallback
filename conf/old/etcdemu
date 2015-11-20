@@ -1,0 +1,15 @@
+#!/bin/bash
+
+
+[[ "${KEY}" == "" ]] && echo "Usage: KEY=a.b.c [VALUE=string] $0 {get|set|rm|ls}" > /dev/stderr && exit 0
+
+if [[ "$@" == "get" ]]; then
+	etcdctl get "${KEY}" 2>/dev/null || true
+elif [[ "$@" == "set" ]]; then
+	etcdctl set "${KEY}" "${VALUE}" >/dev/null 2>&1 || true
+elif [[ "$@" == "rm" ]]; then
+	etcdctl rm "${KEY}" >/dev/null 2>&1 || true
+elif [[ "$@" == "ls" ]]; then
+	etcdctl ls "${KEY}" 2>/dev/null || true
+fi
+

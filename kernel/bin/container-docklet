@@ -1,0 +1,56 @@
+#!/bin/bash
+
+set -e
+
+if [[ "$@" == "" ]]; then
+	echo -e "\033[34mUsage for lookup info:\033[0m docklet [clusterid|owner|info|hosts|status|sshkey]\n" > /dev/stderr
+	echo -e "\033[34mUsage for control cluster:\033[0m docklet [nfs|scaleout|scalein|restart|remove]\n" > /dev/stderr
+	true
+elif [[ "$@" == "clusterid" ]]; then
+	cat /etc/hosts | grep \ host- | awk -F\- '{print $2}' | awk -F\_ '{print $1}'
+elif [[ "$@" == "owner" ]]; then
+	cat /etc/hosts | grep \ host- | awk -F\_ '{print $2}'
+elif [[ "$@" == "hosts" ]]; then
+	echo $(echo `cat /etc/hosts | grep \ nat- | awk '{print $2}'` | tr ' ' ',')
+elif [[ "$@" == "hostnum" ]]; then
+	echo `cat /etc/hosts | grep \ nat- | awk '{print $2}'` | wc -w
+elif [[ "$@" == "status" ]]; then
+	for HOST in `cat /etc/hosts | grep \ nat- | awk '{print $2}'`; do
+		echo -n "* docklet ${HOST} : "
+		if ping -c 1 -w 2 ${HOST} >/dev/null 2>&1; then echo "okay."; else echo "no response."; fi
+	done
+elif [[ "$@" == "info" ]]; then
+	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters 2>/dev/null
+elif [[ "$@" == "scaleout" ]]; then
+	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters/$(docklet clusterid)/scaleout 2>/dev/null | tr \  \\n | grep nat | awk -F\" '{print $2}' | grep nat
+elif [[ "$@" == "scalein" ]]; then
+	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters/$(docklet clusterid)/scalein 2>/dev/null | tr \  \\n | grep nat | awk -F\" '{print $2}' | grep nat
+elif [[ "$1" == "remove" ]]; then
+	while docklet scalein >/dev/null; do echo 'Releasing a slave node ..'; done
+        curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters/$(docklet clusterid)/remove 2>/dev/null
+elif [[ "$@" == "restart" ]]; then
+	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters/$(docklet clusterid)/restart 2>/dev/null
+elif [[ "$1" == "deps" ]]; then
+	shift; DEPENDS="$@"
+	if [[ "${DEPENDS}" != "" ]]; then
+		NON_EXIST=""
+		for DEB in ${DEPENDS}; do if ! dpkg -l ${DEB} 2>/dev/null | tail -n 1 | grep ^ii >/dev/null; then NON_EXIST="${NON_EXIST} ${DEB}"; fi; done
+		if [[ "${NON_EXIST}" != "" ]]; then
+			echo 'Downloading and installing dependencies ..' > /dev/stderr
+			if ! apt-get install -y ${DEPENDS}; then
+				apt-get update
+				if ! apt-get install -y ${DEPENDS}; then
+					echo 'Wrong dependency name!' > /dev/stderr
+					exit 1
+				fi
+			fi
+		fi
+	fi
+elif [[ "$@" == "sshkey" ]]; then
+	cat ~/.ssh/id_rsa
+elif [[ "$@" == "nfs" ]]; then
+	cd /nfs && ls && bash
+else
+	echo "Error parsing commands: '$@'" > /dev/stderr
+	exit 1
+fi 
