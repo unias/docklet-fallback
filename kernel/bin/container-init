@@ -1,25 +1,24 @@
-#!/bin/bash
+#!/bin/bash -x
+
+export TERM=xterm
 
 function init {
 
-	service ssh start
-
-	# [[ "`hostname`" == "nat-master" ]] && myvnc >/dev/null 2>&1 &
-
 	while true; do ping docklet-cloud -c 1 -w 2 && break; done
+	while true; do ping $(cat /etc/resolv.conf | awk '{print $2}') -c 1 -w 2 && break; done
 
-	LOGS="/nfs/.docklet/logs"
-	# [[ -e "/etc/rc.local" ]] && /etc/rc.local >/dev/null 2>&1 || true
+	cd /nfs/.docklet/job/workspace
+	rm -f /nfs/.docklet/log/dl-claas.log
+	
+	while [[ ! -e /nfs/.docklet/job/workspace/main ]]; do sleep 1s; done
 
-	ssh 0.0.0.0 "cd /nfs/.tmp ; \
-		while [[ ! -e ___package___ ]]; do sleep 1s; done ; \
-		7z x ___package___ ; \
-		while [[ ! -e main ]]; do sleep 1s; done ; \
-		chmod a+x main ; \
-		mkdir -p ${LOGS} ; rm -f ${LOGS}/dl-cluster.std{out,err} ; \
-		./main >> ${LOGS}/dl-cluster.stdout 2>> ${LOGS}/dl-cluster.stderr ; \
-		docklet remove"
+	ssh 0.0.0.0 "cd /nfs/.docklet/job/workspace; \
+		TERM=xterm ./main " >> /nfs/.docklet/log/dl-claas.log 2>&1
+
+	while true; do sleep 1h; done
 }
+
+service ssh start
 
 init && exit
 

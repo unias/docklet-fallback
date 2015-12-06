@@ -20,9 +20,7 @@ if [[ "${TYPE}" == "start" ]]; then
 
 	NATADDR=10.10.${NAT_ID}.${NODE_ID}/16
 	
-	mkdir -p ${NFS_PREFIX}/global/users/${USER_NAME}/home/.docklet/nodes/${NODE_ID} ${NFS_PREFIX}/global/users/${USER_NAME}/home/local
-
-	mkdir -p /var/lib/lxc/${UUID}
+	mkdir -p /var/lib/lxc/${UUID} ${NFS_PREFIX}/global/users/${USER_NAME}/home/.docklet/nodes/${NODE_ID}
 
 	if [[ "${NODE_ID}" == "0" ]]; then
 		HOSTNAME='nat-master'
@@ -92,7 +90,7 @@ lxc.mount.entry = /usr/local/sbin/container-init ${TARGET}/init none bind,ro 0 0
 lxc.mount.entry = /usr/local/sbin/container-docklet ${TARGET}/usr/bin/docklet none bind,ro 0 0
 
 lxc.mount.entry = ${NFS_PREFIX}/global/users/${USER_NAME}/home ${TARGET}/nfs none rbind,rw 0 0
-lxc.mount.entry = ${NFS_PREFIX}/global/users/${USER_NAME}/home/.docklet/nodes/${NODE_ID} ${TARGET}/nfs/local none rbind,rw 0 0
+lxc.mount.entry = ${NFS_PREFIX}/global/users/${USER_NAME}/home/.docklet/nodes/${NODE_ID} ${TARGET}/nfs/.docklet/nodes/current none rbind,rw 0 0
 lxc.mount.entry = ${NFS_PREFIX}/global/users/${USER_NAME}/hosts-${NAT_ID} ${TARGET}/etc/hosts none bind,ro 0 0
 
 EOF

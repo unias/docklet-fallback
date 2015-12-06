@@ -205,5 +205,5 @@ if [[ "${RECOVERY}" != "" ]]; then
 	done
 fi
 
-nohup dl-httprest >/var/log/dl-httprest.log 2>&1 &
+nohup dl-httprest >/dev/null 2>&1 &
 

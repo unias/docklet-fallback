@@ -21,13 +21,17 @@ elif [[ "$@" == "status" ]]; then
 	done
 elif [[ "$@" == "info" ]]; then
 	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters 2>/dev/null
-elif [[ "$@" == "scaleout" ]]; then
-	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters/$(docklet clusterid)/scaleout 2>/dev/null | tr \  \\n | grep nat | awk -F\" '{print $2}' | grep nat
-elif [[ "$@" == "scalein" ]]; then
-	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters/$(docklet clusterid)/scalein 2>/dev/null | tr \  \\n | grep nat | awk -F\" '{print $2}' | grep nat
+elif [[ "$1" == "scaleout" ]]; then
+	HOST=$(curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters/$(docklet clusterid)/scaleout 2>/dev/null | tr \  \\n | grep nat | awk -F\" '{print $2}' | grep nat)
+	shift
+	[[ "$@" != "" ]] && ssh ${HOST} docklet async $@
+	echo ${HOST}
+elif [[ "$1" == "scalein" ]]; then
+	HOST=$(curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters/$(docklet clusterid)/scalein 2>/dev/null | tr \  \\n | grep nat | awk -F\" '{print $2}' | grep nat)
+	echo ${HOST}
 elif [[ "$1" == "remove" ]]; then
 	while docklet scalein >/dev/null; do echo 'Releasing a slave node ..'; done
-        curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters/$(docklet clusterid)/remove 2>/dev/null
+        curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters/remove 2>/dev/null
 elif [[ "$@" == "restart" ]]; then
 	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters/$(docklet clusterid)/restart 2>/dev/null
 elif [[ "$1" == "deps" ]]; then
@@ -46,6 +50,9 @@ elif [[ "$1" == "deps" ]]; then
 			fi
 		fi
 	fi
+elif [[ "$1" == "async" ]]; then
+	shift
+	nohup $@ >/dev/null 2>&1 &
 elif [[ "$@" == "sshkey" ]]; then
 	cat ~/.ssh/id_rsa
 elif [[ "$@" == "nfs" ]]; then
@@ -53,4 +60,6 @@ elif [[ "$@" == "nfs" ]]; then
 else
 	echo "Error parsing commands: '$@'" > /dev/stderr
 	exit 1
-fi 
+fi
+
+sleep 1 
