@@ -1,12 +1,16 @@
 #!/bin/bash
 
-. /etc/docklet/docklet.conf
+. /home/docklet/global/docklet.conf
 
 function log {
 	echo -e "\033[34m$@\033[0m\n"
 }
 
 clear
+
+UUID='docklet-1-0'
+NAT_CONV=${IP_CONV:-\{print 10.10.${NAT_ID}.${NODE_ID}\"/\"16\}}
+NATADDR=$(echo ${UUID} | awk -F\- "${NAT_CONV}")
 
 log "# This is standard login interface:"
 curl -H "Auth:docklet/docklet" "http://0.0.0.0:8000/user/login"
@@ -25,12 +29,12 @@ curl -F user=docklet -F key=docklet "http://0.0.0.0:8000/clusters/1/scaleout"
 echo ; read -p 'Press [Enter] to continue ..' ; clear
 
 log "# Try login clusters, nodes size should be 2:"
-ssh root@10.10.1.0 -i ${NFS_PREFIX}/global/users/docklet/ssh_keys/id_rsa docklet status
-ssh root@10.10.1.0 -i ${NFS_PREFIX}/global/users/docklet/ssh_keys/id_rsa
+ssh root@$(echo $NAT_ADDR | awk -F\/ '{print $1}') -i /home/docklet/global/users/docklet/ssh_keys/id_rsa
 clear
 
 log "# Remove clusters:"
-ssh root@10.10.1.0 -i ${NFS_PREFIX}/global/users/docklet/ssh_keys/id_rsa docklet remove
+curl -F user=docklet -F key=docklet "http://0.0.0.0:8000/clusters/1/scalein"
+curl -F user=docklet -F key=docklet "http://0.0.0.0:8000/clusters/remove"
 echo ; read -p 'Press [Enter] to continue ..' ; clear
 
 echo "All tests done."

@@ -10,25 +10,29 @@ elif [[ "$@" == "clusterid" ]]; then
 	cat /etc/hosts | grep \ host- | awk -F\- '{print $2}' | awk -F\_ '{print $1}'
 elif [[ "$@" == "owner" ]]; then
 	cat /etc/hosts | grep \ host- | awk -F\_ '{print $2}'
-elif [[ "$@" == "hosts" ]]; then
-	echo $(echo `cat /etc/hosts | grep \ nat- | awk '{print $2}'` | tr ' ' ',')
+elif [[ "$@" == "mpi-flags" ]]; then
+	NUM=$(docklet hostnum)
+	NAT_ID=$(docklet clusterid)
+	HOSTS="10.10.${NAT_ID}.0"
+	for (( I = 1 ; I < ${NUM}; I ++ )); do
+		HOSTS="${HOSTS},10.10.${NAT_ID}.${I}"
+	done
+	echo "-hosts ${HOSTS} -n ${NUM}"
 elif [[ "$@" == "hostnum" ]]; then
-	echo `cat /etc/hosts | grep \ nat- | awk '{print $2}'` | wc -w
+	docklet info | python -c 'import sys, json; print len(json.load(sys.stdin)["data"]["clusters"][0]["nodes"])' 2>/dev/null
 elif [[ "$@" == "status" ]]; then
-	for HOST in `cat /etc/hosts | grep \ nat- | awk '{print $2}'`; do
+	NUM=$(docklet hostnum)
+	for (( I = 0 ; I < ${NUM} ; ++ I )); do
+		HOST="10.10.$(docklet clusterid).${I}"
 		echo -n "* docklet ${HOST} : "
 		if ping -c 1 -w 2 ${HOST} >/dev/null 2>&1; then echo "okay."; else echo "no response."; fi
 	done
 elif [[ "$@" == "info" ]]; then
-	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters 2>/dev/null
+	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://10.10.0.1:8000/clusters 2>/dev/null
 elif [[ "$1" == "scaleout" ]]; then
-	HOST=$(curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters/$(docklet clusterid)/scaleout 2>/dev/null | tr \  \\n | grep nat | awk -F\" '{print $2}' | grep nat)
-	shift
-	[[ "$@" != "" ]] && ssh ${HOST} docklet async $@
-	echo ${HOST}
+	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://10.10.0.1:8000/clusters/scaleout
 elif [[ "$1" == "scalein" ]]; then
-	HOST=$(curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters/$(docklet clusterid)/scalein 2>/dev/null | tr \  \\n | grep nat | awk -F\" '{print $2}' | grep nat)
-	echo ${HOST}
+	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://10.10.0.1:8000/clusters/scalein
 elif [[ "$1" == "remove" ]]; then
 	while docklet scalein >/dev/null; do echo 'Releasing a slave node ..'; done
         curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters/remove 2>/dev/null
@@ -62,4 +66,4 @@ else
 	exit 1
 fi
 
-sleep 1 
+sleep 0.1 

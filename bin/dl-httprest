@@ -1,0 +1,188 @@
+#!/usr/bin/python3
+
+import traceback, re, random
+import os, subprocess, json, sys
+import posixpath, urllib, cgi, shutil, mimetypes
+
+import subprocess as commands
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class DockletHTTPRequestHandler(BaseHTTPRequestHandler):
+
+	def sys_append_log(self, text):
+		f = open('/var/log/dl-httprest.log', 'a')
+		f.write(text)
+		f.write('\n')
+		f.close()
+
+	def do_GET(self):
+		self.send_response(200)
+		self.send_header("Content-type", "application/json")
+		self.end_headers()
+		self.wfile.write("Un-supported.\n".encode())
+		#self.wfile.close()
+		return
+
+	def execute(self, command, node = '0.0.0.0'):
+		self.sys_append_log("[RPC] ssh %s %s 2>/dev/null" % (node, command))
+		(status, output) = commands.getstatusoutput("ssh -o StrictHostKeyChecking=no %s '. /etc/docklet/docklet.conf; %s' 2>/dev/null" % (node, command))
+		return output if status==0 else None
+
+	def authenticate_with_headers(self, provider=None):
+		[username, password] = provider if provider!=None else self.headers['Auth'].split('/', 1)
+		if re.match('^[a-z0-9A-Z\-\_\@]{1,20}$',username)==None:
+			raise Exception('illegal username!')
+		if username=='root':
+			loggedIn = False
+		else:
+			rsa_buff = commands.getoutput("cat /home/docklet/global/users/%s/ssh_keys/id_rsa 2>/dev/null" % username).strip()
+			loggedIn = (rsa_buff != '' and password == rsa_buff)
+			if not loggedIn:
+				try:
+					from pam import pam
+					loggedIn = pam().authenticate(username, password)
+				except:
+					loggedIn = 'docklet' == username and 'docklet' == password
+		if not loggedIn:
+			raise Exception("authentication failed")
+		
+		return username
+
+	def etcd_get_machines(self):
+		return os.listdir('/home/docklet/global/machines/')
+
+	def etcd_get_random_machine(self):
+		cl = self.etcd_get_machines()
+		return cl[random.randint(0, len(cl)-1)]
+
+	def etcd_list_clusters(self, user):
+		try:
+			nodes = commands.getoutput("ls /home/docklet/global/machines/*/%s-* 2>/dev/null | awk -F\- '{print $2}'" % user).split()
+			clusters = []
+			for item in nodes:
+				try:
+					datas = self.etcd_list_single_cluster(user, int(item))
+					clusters.append(datas)
+					break
+				except Exception as e:
+					pass
+			return clusters
+		except Exception as e:
+			self.sys_append_log(e)
+			return {}
+
+	def etcd_list_single_cluster(self, user, cl_id):
+		datas = commands.getoutput("ls /home/docklet/global/machines/*/%s-%s-* 2>/dev/null | cut -b 31-" % (user, cl_id)).split()
+		if len(datas) > 0:
+			nodes = []
+			for node in datas:
+				[work_on,uuid] = node.split('/')
+				[owner,nat_id,node_id] = uuid.split('-')
+				nodes.append({'work_on':work_on, 'uuid':uuid, 'nat_id':nat_id})
+			return {'id': cl_id, 'owner': user, 'nodes': nodes}
+		raise Exception("cluster not found!")
+
+	def on_post_request(self, context, user, form):
+		if context.startswith('/clusters/'):
+			parts = context[10:].strip().split('/')
+			
+			if parts[0]=="":
+				cls = self.etcd_list_clusters(user)
+				[openssh, config] = self.execute("USER_NAME=%s "+ os.path.dirname(sys.argv[0]) + "/dl-key" % user).split("========", 1)
+				return {'clusters': cls, 'openssh': openssh, 'config': config}
+			elif parts[0]=="create":
+				cls = self.etcd_list_clusters(user)
+				if len(cls)>0:
+					raise Exception("your cluster is already booted")
+				WORK_ON = commands.getoutput(os.path.dirname(sys.argv[0]) + '/dl-join network')# self.etcd_get_random_machine()
+				NAT_ID = 1
+				nat_list = commands.getoutput("ls /home/docklet/global/machines/*/* 2>/dev/null | awk -F\- '{print $2}'")
+				if nat_list != None:
+					nat_list = nat_list.split()
+					while str(NAT_ID) in nat_list:
+						NAT_ID += 1
+				if NAT_ID > 255:
+					raise Exception("create operation failed")
+				uuid = '%s-%s-0' % (user, NAT_ID)
+				ipaddr = self.execute(os.path.dirname(sys.argv[0]) + '/dl-weave start %s' % uuid, WORK_ON)
+				return {'ip': ipaddr, 'uuid': uuid, 'work_on': WORK_ON}
+			elif parts[0] == "remove":
+				cls = self.etcd_list_clusters(user)
+				obj = cls[0]['nodes']
+				if len(obj)!=1:
+					raise Exception("please scalein the cluster first")
+				clusterInt = int(cls[0]['id'])
+				WORK_ON = obj[0]['work_on']
+				if self.execute(os.path.dirname(sys.argv[0]) + '/dl-weave stop %s-%s-0' % (user, clusterInt), WORK_ON)==None:
+					raise Exception("exit operation failed")
+				return {'master': WORK_ON, 'natid': clusterInt}
+			elif parts[0] == "restart":
+				cls = self.etcd_list_clusters(user)
+				obj = cls[0]['nodes']
+				status = []
+				for s in obj:
+					[mac, uuid, ipaddr] = [s['work_on'], s['uuid'], s['nat_id']]
+					status.append({"uuid": uuid, "status": self.execute(os.path.dirname(sys.argv[0]) + '/dl-weave start %s' % uuid, mac)!=None})
+				return {"status": status}
+			elif parts[0] == "scalein":
+				cls = self.etcd_list_clusters(user)
+				obj = cls[0]['nodes']
+				if len(obj)<=1:
+					raise Exception("no more slaves to scale in")
+				s = max(obj, key=lambda x: int(x['uuid'].split('-')[-1]))
+				[mac, uuid, ipaddr] = [s['work_on'], s['uuid'], s['nat_id']]
+				self.execute(os.path.dirname(sys.argv[0]) + '/dl-weave stop %s' % uuid, mac)
+				return {'ip':ipaddr, 'uuid':uuid, 'work_on':mac}
+			elif parts[0] == "scaleout":
+				cls = self.etcd_list_clusters(user)
+				obj = cls[0]['nodes']
+				limit = 2 * len(self.etcd_get_machines())
+				if len(obj)>=limit:
+					raise Exception("no more resources to scale out")
+				node_id = len(obj)
+				clusterInt = int(cls[0]['id'])
+				mac = commands.getoutput(os.path.dirname(sys.argv[0]) + '/dl-join network')#self.etcd_get_random_machine()
+				uuid = '%s-%s-%s' % (user, clusterInt, node_id)
+				ipaddr = self.execute(os.path.dirname(sys.argv[0]) + '/dl-weave start %s' % uuid, mac)
+				return {'ip':ipaddr, 'uuid':uuid, 'work_on': mac}
+		
+		raise Exception('unsupported request!')
+	
+	def do_POST(self):
+		try:
+			self.sys_append_log("[REQ] POST %s" % self.path)
+			
+			length = int(self.headers['content-length'])
+			if length>10240000:
+				raise Exception("data too large, handler cancelled")
+			
+			form = cgi.FieldStorage(fp=self.rfile, headers=self.headers,environ={'REQUEST_METHOD':'POST','CONTENT_TYPE': "text/html"})
+			
+			try:
+				key = form['key'].file.read().strip()
+			except:
+				key = form['key'].value
+			try:
+				key = key.decode()
+			except:
+				pass
+			username = self.authenticate_with_headers([form['user'].value, key.strip()])
+			context = self.path.split('?')[0]
+			if not context.endswith("/"):
+				context = context + "/"
+			obj = {'success':True, 'data': self.on_post_request(context, username, form)}
+		except Exception as e:
+			self.sys_append_log(traceback.format_exc())
+			obj = {'success':False, 'message': str(e)}
+		
+		self.send_response(200)
+		self.send_header("Content-type", "application/json")
+		self.end_headers()
+		self.wfile.write(json.dumps(obj).encode())
+		self.wfile.write('\n'.encode())
+		#self.wfile.close()
+		return
+
+if __name__ == '__main__':
+	server = HTTPServer(('0.0.0.0', 8000), DockletHTTPRequestHandler)
+	server.serve_forever()

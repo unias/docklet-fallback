@@ -1,0 +1,235 @@
+#!/bin/bash -e
+
+DIR_NAME=$(dirname $0)
+CUR_DIR=$(pwd)
+
+. /home/docklet/global/docklet.conf
+
+TYPE=$1 ; shift
+UUID=$1 ; shift || true
+
+USER_NAME=$(echo ${UUID} | awk -F\- '{print $1}') || true
+NAT_ID=$(echo ${UUID} | awk -F\- '{print $2}') || true
+NODE_ID=$(echo ${UUID} | awk -F\- '{print $3}') || true
+
+NAT_CONV=${IP_CONV:-\{print \"10.10.${NAT_ID}.\" ${NODE_ID}\"/\"16\}}
+NATADDR=$(echo ${UUID} | awk -F\- "${NAT_CONV}")
+NATADDR_NOMASK=$(echo ${NATADDR} | awk -F\/ '{print $1}')
+
+TARGET="/var/lib/lxc/${UUID}/rootfs"
+LAYER="/var/lib/lxc/${UUID}/diff"
+
+if [[ "${TYPE}" == "start" ]]; then
+
+	NAT_ID=${NAT_ID} USER_NAME=${USER_NAME} ${DIR_NAME}/dl-key >/dev/null 2>&1 || true
+
+	mkdir -p /var/lib/lxc/${UUID} /home/docklet/global/users/${USER_NAME}/home/.docklet/nodes/${NODE_ID}
+
+	cat <<EOF > /var/lib/lxc/${UUID}/config
+lxc.include = /usr/share/lxc/config/ubuntu.common.conf
+
+lxc.pts = 1024
+lxc.console = none
+lxc.tty = 0
+lxc.pivotdir = lxc_putold
+lxc.rootfs = ${TARGET}
+lxc.utsname = ${UUID}
+lxc.autodev = 0
+
+lxc.network.type = veth
+lxc.network.name = eth0
+lxc.network.link = ${IP_DEV:-ovs-bridge}
+lxc.network.ipv4 = ${NATADDR}
+lxc.network.ipv4.gateway = ${IP_GW:-10.10.0.1}
+lxc.network.flags = up
+lxc.network.mtu = 1450
+
+lxc.cgroup.devices.deny = a
+lxc.cgroup.devices.allow = c *:* m
+lxc.cgroup.devices.allow = b *:* m
+lxc.cgroup.devices.deny = c 5:1 rwm
+lxc.cgroup.devices.allow = c 4:0 rwm
+lxc.cgroup.devices.allow = c 4:1 rwm
+lxc.cgroup.devices.allow = c 136:* rwm
+lxc.cgroup.devices.allow = c 5:2 rwm
+lxc.cgroup.devices.allow = c 10:200 rwm
+lxc.cgroup.devices.allow = c 1:3 rwm
+lxc.cgroup.devices.allow = c 1:5 rwm
+lxc.cgroup.devices.allow = c 1:7 rwm
+lxc.cgroup.devices.allow = c 5:0 rwm
+lxc.cgroup.devices.allow = c 1:9 rwm
+lxc.cgroup.devices.allow = c 1:8 rwm
+
+#lxc.cap.keep = 0
+#lxc.cap.keep = 1
+#lxc.cap.keep = 4
+#lxc.cap.keep = 3
+#lxc.cap.keep = 27
+#lxc.cap.keep = 13
+#lxc.cap.keep = 6
+#lxc.cap.keep = 7
+#lxc.cap.keep = 31
+#lxc.cap.keep = 8
+#lxc.cap.keep = 10
+#lxc.cap.keep = 18
+#lxc.cap.keep = 5
+#lxc.cap.keep = 29
+
+lxc.seccomp =
+
+# lxc.cap.drop = sys_admin net_admin mac_admin mac_override sys_time sys_module
+
+#lxc.cgroup.memory.kmem.limit_in_bytes = ${FOLK_BOMB_SPACE:-512m}
+#lxc.cgroup.memory.oom_control = 1
+#lxc.cgroup.memory.limit_in_bytes = $(( ${SOFT_MEMORY_QUOTA:-4294967296} * 4 ))
+#lxc.cgroup.memory.soft_limit_in_bytes = ${SOFT_MEMORY_QUOTA:-4294967296}
+#lxc.cgroup.memory.memsw.limit_in_bytes = $(( ${SOFT_MEMORY_QUOTA:-4294967296} * 16 ))
+#lxc.cgroup.cpu.cfs_quota_us = ${CPU_SHARE_QUOTA_US:-100000}
+
+#lxc.mount.auto = proc sys
+
+#lxc.mount.entry = devpts ${TARGET}/dev/pts devpts newinstance,ptmxmode=0666,nosuid,noexec 0 0
+
+#lxc.mount.entry = /home/docklet/global/users/${USER_NAME}/home ${TARGET}/nfs none rbind,rw 0 0
+#lxc.mount.entry = /home/docklet/global/users/${USER_NAME}/home/.docklet/nodes/${NODE_ID} ${TARGET}/nfs/.docklet/nodes/current none rbind,rw 0 0
+
+EOF
+	lxc-stop -k -n ${UUID} >/dev/null 2>&1 || true
+	umount -l ${TARGET} >/dev/null 2>&1 || true
+	rm -rf ${TARGET}
+	mkdir -p ${TARGET} ${LAYER}
+	
+	lvcreate -L ${DISK_LIMIT_MB:-2048} -n ${UUID} dl-devmapper >/dev/null 2>&1 && yes | mkfs.ext4 /dev/dl-devmapper/${UUID} >/dev/null 2>&1 || true
+	mount /dev/dl-devmapper/${UUID} ${LAYER} >/dev/null 2>&1 || true
+	
+	mkdir -p ${LAYER}/{work,overlayfs}
+	# mount -t overlay overlay -olowerdir=/home/docklet/local/filesystem,upperdir=${LAYER}/overlayfs,workdir=${LAYER}/work ${TARGET}/
+	mount -t aufs -o br=${LAYER}/overlayfs=rw:/home/docklet/local/filesystem=ro+wh none ${TARGET}/
+	
+	cat <<EOF > ${TARGET}/etc/hosts
+127.0.0.1 host-${NAT_ID}_${USER_NAME}
+127.0.0.1 localhost
+EOF
+#${NATADDR_NOMASK} ${UUID}
+
+	for (( I = 0 ; I < 20 ; ++ I )); do
+		echo "10.10.${NAT_ID}.${I} ${USER_NAME}-${NAT_ID}-${I}" >> ${TARGET}/etc/hosts
+	done
+
+	mkdir -p ${TARGET}/root/.ssh
+	
+	rsync -Ha ${DIR_NAME}/container-init ${TARGET}/init
+	rsync -Ha ${DIR_NAME}/container-docklet ${TARGET}/usr/bin/docklet
+	rsync -Ha /home/docklet/global/users/${USER_NAME}/ssh_keys/id_rsa ${TARGET}/root/.ssh/id_rsa
+	rsync -Ha /home/docklet/global/users/${USER_NAME}/ssh_keys/authorized_keys ${TARGET}/root/.ssh/authorized_keys
+	
+	lxc-start -n ${UUID}
+	echo ${NATADDR_NOMASK}
+
+	rm -f /var/run/netns/${UUID}
+	PID=$(lxc-info -n ${UUID} -p -H 2>/dev/null)
+	ln -s /proc/${PID}/ns/net /var/run/netns/${UUID}
+
+	#ip netns exec ${UUID} iptables -t nat -S
+	#IP_EXT=$(dl-join network)
+	#PORT_EXT="2`printf "%03d" ${NAT_ID}`${NODE_ID}"
+	#iptables -t nat -D PREROUTING -d ${IP_EXT} -p tcp -m tcp --dport ${PORT_EXT} -j DNAT --to ${NATADDR}:22 2>/dev/null || true
+	#iptables -t nat -D POSTROUTING -s ${NATADDR} -j SNAT --to ${IP_EXT} 2>/dev/null || true
+	#iptables -t nat -A PREROUTING -d ${IP_EXT} -p tcp -m tcp --dport ${PORT_EXT} -j DNAT --to ${NATADDR}:22 || true
+	#iptables -t nat -A POSTROUTING -s ${NATADDR} -j SNAT --to ${IP_EXT} || true
+
+	# ip addr add ${IPADDR} dev ${IPDEV} >/dev/null 2>&1 || true
+	# IP_NOMASK=$(echo ${IPADDR} | awk -F"/" '{print $1}' )
+	# iptables -t nat -A PREROUTING -d ${IP_NOMASK} -j DNAT --to ${NATADDR} || true
+	# iptables -t nat -A POSTROUTING -s ${NATADDR} -j SNAT --to ${IP_NOMASK} || true
+
+	# NSPID=$(cat "/sys/fs/cgroup/cpu/lxc/${UUID}/tasks" 2>/dev/null | head -n 1)
+	# [[ "${NSPID}" == "" ]] && false
+	# mkdir -p /var/run/netns
+	# rm -f /var/run/netns/$NSPID
+	# ln -s /proc/$NSPID/ns/net /var/run/netns/$NSPID
+	# LOCAL_IFNAME=vethl$NSPID
+	# GUEST_IFNAME=vethg$NSPID
+	# ip link add name $LOCAL_IFNAME type veth peer name $GUEST_IFNAME
+	# ip link set $LOCAL_IFNAME up
+	# ip link set $GUEST_IFNAME netns $NSPID
+	# ip netns exec $NSPID ip link set $GUEST_IFNAME name eth0
+	# ip netns exec $NSPID ip addr add ${NATADDR}/8 dev eth0
+	# ip netns exec $NSPID ip link set eth0 up
+	# brctl addif ovs-bridge $LOCAL_IFNAME
+	# rm -f /var/run/netns/$NSPID
+	
+elif [[ "${TYPE}" == "stop" ]]; then
+	lxc-stop -k -n ${UUID} >/dev/null 2>&1 || true
+	umount -l ${TARGET} >/dev/null 2>&1 || true
+	rm -rf ${TARGET} || true
+	umount -l ${LAYER} >/dev/null 2>&1 || true
+	rm -rf ${LAYER}
+	rm -rf /var/lib/lxc/${UUID} /var/run/netns/${UUID}
+	yes | lvremove /dev/dl-devmapper/${UUID} >/dev/null 2>&1
+
+	#IP_EXT=$(dl-join network)
+	#PORT_EXT="2`printf "%03d" ${NAT_ID}`${NODE_ID}"
+	#iptables -t nat -D PREROUTING -d ${IP_EXT} -p tcp -m tcp --dport ${PORT_EXT} -j DNAT --to ${NATADDR}:22 || true
+	#iptables -t nat -D POSTROUTING -s ${NATADDR} -j SNAT --to ${IP_EXT} || true
+elif [[ "${TYPE}" == "cp" ]]; then
+	cd /var/lib/lxc/${UUID}
+	
+	if ! lxc-info -n ${UUID} >/dev/null 2>&1; then exit 1; fi
+
+	if ! lxc-checkpoint -s -D `pwd`/cp -n ${UUID} >/dev/null 2>&1; then
+		rm -r ./cp
+		echo "Checkpoint for ${UUID} failed!"
+		exit 1
+	fi
+
+	tar czvf /home/docklet/global/${UUID}.tgz {config,diff,cp} >/dev/null 2>&1
+
+	umount ./rootfs ./diff -l >/dev/null 2>&1 || true
+
+	#IP_EXT=$(dl-join network)
+	#PORT_EXT="2`printf "%03d" ${NAT_ID}`${NODE_ID}"
+	#iptables -t nat -D PREROUTING -d ${IP_EXT} -p tcp -m tcp --dport ${PORT_EXT} -j DNAT --to ${NATADDR}:22 || true
+	#iptables -t nat -D POSTROUTING -s ${NATADDR} -j SNAT --to ${IP_EXT} || true
+
+	rm -rf /var/lib/lxc/${UUID} /var/run/netns/${UUID}
+	yes | lvremove /dev/dl-devmapper/${UUID} >/dev/null 2>&1
+elif [[ "${TYPE}" == "rv" ]]; then
+	mkdir -p /var/lib/lxc/${UUID}/rootfs
+	cd /var/lib/lxc/${UUID}
+
+	mkdir -p ${LAYER}
+	lvcreate -L ${DISK_LIMIT_MB:-2048} -n ${UUID} dl-devmapper >/dev/null 2>&1
+	yes | mkfs.ext4 /dev/dl-devmapper/${UUID} >/dev/null 2>&1 || true
+	mount /dev/dl-devmapper/${UUID} ${LAYER} || true
+	
+	tar xvf /home/docklet/global/${UUID}.tgz >/dev/null 2>&1
+	rm -f /home/docklet/global/${UUID}.tgz
+	mount -t aufs -o br=diff/overlayfs=rw:/home/docklet/local/filesystem=ro+wh none rootfs/
+	
+	if ! lxc-checkpoint -r -D `pwd`/cp -n ${UUID} >/dev/null 2>&1; then
+		rm -rf ./cp
+		echo "Recovery for ${UUID} failed!"
+		exit 1
+	fi
+
+	rm -rf ./cp /var/run/netns/${UUID}
+	PID=$(lxc-info -n ${UUID} -p -H)
+	ln -s /proc/${PID}/ns/net /var/run/netns/${UUID}
+
+	#ip netns exec ${UUID} iptables -t nat -S | grep "^-A" || true
+	#IP_EXT=$(dl-join network)
+	#PORT_EXT="2`printf "%03d" ${NAT_ID}`${NODE_ID}"
+	#iptables -t nat -D PREROUTING -d ${IP_EXT} -p tcp -m tcp --dport ${PORT_EXT} -j DNAT --to ${NATADDR}:22 2>/dev/null || true
+	#iptables -t nat -D POSTROUTING -s ${NATADDR} -j SNAT --to ${IP_EXT} 2>/dev/null || true
+	#iptables -t nat -A PREROUTING -d ${IP_EXT} -p tcp -m tcp --dport ${PORT_EXT} -j DNAT --to ${NATADDR}:22 || true
+	#iptables -t nat -A POSTROUTING -s ${NATADDR} -j SNAT --to ${IP_EXT} || true
+	
+elif [[ "${TYPE}" == "break" ]]; then
+	HOSTS=`lxc-ls`
+	[[ "${HOSTS}" != "" ]]
+	for i in ${HOSTS}; do lxc-stop -k -n ${i} >/dev/null 2>&1 || true; done
+else
+	false
+fi
+

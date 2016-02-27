@@ -1,0 +1,165 @@
+#!/bin/bash -e
+
+DIR_NAME=$(dirname $0)
+CUR_DIR=$(pwd)
+
+DEPENDS="rsync cgroup-lite lxc lvm2 bridge-utils curl sshfs netcat-openbsd net-tools psmisc openssh-server criu openvswitch-switch"
+
+if ! dpkg -L ${DEPENDS} >/dev/null 2>&1; then apt-get install -y --no-install-recommends ${DEPENDS}; fi
+
+
+function log_msg {
+	TYPE=$1 && shift && COLOR=35
+	[[ "${TYPE}" == "INFO" ]] && COLOR=34
+	[[ "${TYPE}" == "WARN" ]] && COLOR=33
+	[[ "${TYPE}" == "ERROR" ]] && COLOR=31
+	echo -e "\033[${COLOR}m[${TYPE}] $@\033[0m" > /dev/stderr
+	[[ "${TYPE}" == "ERROR" ]] && exit 1
+	return 0
+}
+
+function get_address {
+	ADDRESS=`ip route | awk '{ if ($3=="'$(ip route | grep ^default | awk '{print $5}')'") print $9 }' | tail -n 1`
+	echo ${ADDRESS:-10.10.0.1}
+	unset ADDRESS
+	# nmap -sP "${MACHINE_CIDR}" | grep report | awk '{print $NF}' | awk -F\( '{print $NF}' | awk -F\) '{print $1}'
+}
+
+HOST_IP=$(get_address); if [[ "$@" == "network" ]]; then echo ${HOST_IP}; exit 0; fi
+
+grep cgroup_enable=memory /proc/cmdline >/dev/null || grep swapaccount=1 /proc/cmdline >/dev/null || log_msg "ERROR" "Memory Account not enabled."
+
+log_msg "INFO" "IP of this host is ${HOST_IP}."
+
+log_msg "INFO" "Checking Environment for Docklet Cluster .."
+
+[[ "`whoami`" != "root" ]] && log_msg "ERROR" "Root previledge required!"
+[[ "`cat /proc/cmdline | grep cgroup`" == "" ]] && log_msg "ERROR" "Memory limit not enabled!"
+
+ip link delete lxcbr0 >/dev/null 2>&1 || true
+
+log_msg "INFO" "Remounting NFS /home/docklet/global .."
+
+mkdir -p /home/docklet/global
+if ! mountpoint /home/docklet/global -q; then `${NFS_MOUNT_CMD:-mount -o bind /mnt /home/docklet/global}`; fi
+mkdir -p /home/docklet/global/{users,machines/${HOST_IP}}
+rm -rf /var/run/netns
+ln -s /home/docklet/global/machines/${HOST_IP} /var/run/netns
+
+touch /home/docklet/global/docklet.conf
+. /home/docklet/global/docklet.conf
+
+if [[ "${IP_DEV:-ovs-bridge}" == "ovs-bridge" ]]; then
+	log_msg "WARN" "Setting up for localhost."
+	
+	if [[ ! -e "/root/.ssh/id_rsa" ]] && [[ ! -e "/root/.ssh/authorized_keys" ]]; then
+		mv /root/.ssh/id_rsa /root/.ssh/id_rsa.bak 2>/dev/null || true
+		mv /root/.ssh/id_rsa.pub /root/.ssh/id_rsa.pub.bak 2>/dev/null || true
+		mv /root/.ssh/authorized_keys /root/.ssh/authorized_keys.bak 2>/dev/null || true
+		
+		echo -e '\n' | ssh-keygen -t rsa -P '' >/dev/null 2>&1
+		mv /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys
+	fi
+	
+	ssh -oStrictHostKeyChecking=no root@0.0.0.0 true
+
+	if ! ip addr show ovs-bridge 2>/dev/null | grep 10.10.0.1 >/dev/null; then
+		iptables -F
+		iptables -t nat -F
+		iptables -t nat -A POSTROUTING -s 10.10.0.0/16 -j MASQUERADE
+
+		ip link set ovs-link down 2>/dev/null || true
+		ip link set ovs-bridge down 2>/dev/null || true
+
+		brctl delbr ovs-bridge 2>/dev/null || true
+		brctl addbr ovs-bridge
+
+		# ovs-vsctl del-br ovs-link 2>/dev/null || true
+		# ovs-vsctl add-br ovs-link 2>/dev/null || true
+		# ip link set ovs-link up 2>/dev/null || true
+		# ovs-vsctl add-port ovs-link gre-${HOST} -- set interface gre-${HOST} type=gre options:remote_ip=${HOST}
+
+		sleep 2s
+		ip link set dev ovs-bridge up
+		ip addr add 10.10.0.1/16 dev ovs-bridge broadcast 10.10.255.255
+		brctl addif ovs-bridge ovs-link 2>/dev/null || true
+	fi
+	
+	kill -9 $(ps aux | grep dnsmasq | grep lxcbr0 | awk '{print $2}') >/dev/null 2>&1 || true
+	kill -9 $(ps aux | grep dnsmasq | grep 10.10 | awk '{print $2}') >/dev/null 2>&1 || true
+	dnsmasq -u lxc-dnsmasq --strict-order --bind-interfaces --pid-file=/run/lxc/dl-dnsmasq.pid --listen-address 10.10.0.1 --except-interface=lo --interface=ovs-bridge --dhcp-authoritative >/dev/null 2>&1 || true
+fi
+
+log_msg "INFO" "Setting up for local LVM .."
+
+LOOP="/home/docklet/local/dl-localdevmapper.lo"
+
+if [[ ! -e "${LOOP}" ]]; then mkdir -p `dirname "${LOOP}"`; dd if=/dev/zero of=${LOOP} bs=1M seek=102400 count=0 ; fi
+
+losetup /dev/loop0 ${LOOP} >/dev/null 2>&1 || true
+vgcreate dl-devmapper /dev/loop0 >/dev/null 2>&1 || true
+
+# domainname $(echo ${NIS_SERVER} | awk '{print $2}') >/dev/null 2>&1
+
+function setup_rootfs {
+	set -e
+	
+	ROOTFS=/home/docklet/local/filesystem
+	
+	mkdir -p ${ROOTFS}
+	
+	cd ${ROOTFS}
+	
+	if [[ ! -e ./nfs ]]; then
+		curl -L http://mirrors.ustc.edu.cn/ubuntu-cdimage/ubuntu-core/releases/15.10/release/ubuntu-core-15.10-core-amd64.tar.gz | tar xzvf - -C . >/dev/null
+		cp /etc/resolv.conf ./etc
+		chroot . apt-get update
+		chroot . apt-get install -y --no-install-recommends openssh-server upstart-sysv bash-completion iproute2 vim-tiny
+		sed -i 's/without-password/yes/g' ./etc/ssh/sshd_config
+		sed -i 's/prohibit-password/yes/g' ./etc/ssh/sshd_config
+		mkdir -p nfs
+	fi
+	
+	rm -rf dev/{console,null,zero,tty,random,urandom,ptmx}
+	mknod -m 622 dev/console c 5 1
+	mknod -m 666 dev/null c 1 3
+	mknod -m 666 dev/zero c 1 5
+	mknod -m 666 dev/ptmx c 5 2
+	mknod -m 666 dev/tty c 5 0
+	mknod -m 444 dev/random c 1 8
+	mknod -m 444 dev/urandom c 1 9
+
+	rm -rf dev/{fd,stdin,stdout,stderr}
+	ln -s /proc/self/fd/0 dev/stdin
+	ln -s /proc/self/fd/1 dev/stdout
+	ln -s /proc/self/fd/2 dev/stderr
+	ln -s /proc/self/fd dev/fd
+	
+	echo "" > etc/resolv.conf
+	echo "nameserver ${DNS_SERVER:-10.10.0.1}" >> etc/resolv.conf
+	echo "LANG=en_US.UTF-8" > etc/default/locale
+	
+	cd ${CUR_DIR}
+}
+
+setup_rootfs
+
+killall dl-httprest >/dev/null 2>&1 || true
+
+exec ${DIR_NAME}/dl-httprest
+
+nohup ${DIR_NAME}/dl-httprest >/dev/null 2>&1 &
+
+log_msg "INFO" "Finish all initialization .."
+
+RECOVERY=`lxc-ls` || true
+
+if [[ "${RECOVERY}" != "" ]]; then
+	for UUID in ${RECOVERY}; do
+		if [[ "`lxc-info -n ${UUID} -p 2>/dev/null`" == "" ]]; then
+			log_msg "WARN" "Recoverying lxc - ${UUID} .."
+			${DIR_NAME}/dl-weave start ${UUID} >/dev/null 2>&1
+		fi
+	done
+fi
+
