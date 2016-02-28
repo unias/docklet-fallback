@@ -7,7 +7,7 @@ import posixpath, urllib, cgi, shutil, mimetypes
 import subprocess as commands
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-class DockletHTTPRequestHandler(BaseHTTPRequestHandler):
+class DockletHandler(BaseHTTPRequestHandler):
 
 	def sys_append_log(self, text):
 		f = open('/var/log/dl-httprest.log', 'a')
@@ -22,11 +22,6 @@ class DockletHTTPRequestHandler(BaseHTTPRequestHandler):
 		self.wfile.write("Un-supported.\n".encode())
 		#self.wfile.close()
 		return
-
-	def execute(self, command, node = '0.0.0.0'):
-		self.sys_append_log("[RPC] ssh %s %s 2>/dev/null" % (node, command))
-		(status, output) = commands.getstatusoutput("ssh -o StrictHostKeyChecking=no %s '. /etc/docklet/docklet.conf; %s' 2>/dev/null" % (node, command))
-		return output if status==0 else None
 
 	def authenticate_with_headers(self, provider=None):
 		[username, password] = provider if provider!=None else self.headers['Auth'].split('/', 1)
@@ -45,7 +40,6 @@ class DockletHTTPRequestHandler(BaseHTTPRequestHandler):
 					loggedIn = 'docklet' == username and 'docklet' == password
 		if not loggedIn:
 			raise Exception("authentication failed")
-		
 		return username
 
 	def etcd_get_machines(self):
@@ -85,16 +79,14 @@ class DockletHTTPRequestHandler(BaseHTTPRequestHandler):
 	def on_post_request(self, context, user, form):
 		if context.startswith('/clusters/'):
 			parts = context[10:].strip().split('/')
-			
 			if parts[0]=="":
 				cls = self.etcd_list_clusters(user)
-				[openssh, config] = self.execute("USER_NAME=%s "+ os.path.dirname(sys.argv[0]) + "/dl-key" % user).split("========", 1)
+				[openssh, config] = commands.getoutput("USER_NAME=%s ./dl-key" % user).split("========", 1)
 				return {'clusters': cls, 'openssh': openssh, 'config': config}
 			elif parts[0]=="create":
 				cls = self.etcd_list_clusters(user)
 				if len(cls)>0:
 					raise Exception("your cluster is already booted")
-				WORK_ON = commands.getoutput(os.path.dirname(sys.argv[0]) + '/dl-join network')# self.etcd_get_random_machine()
 				NAT_ID = 1
 				nat_list = commands.getoutput("ls /home/docklet/global/machines/*/* 2>/dev/null | awk -F\- '{print $2}'")
 				if nat_list != None:
@@ -104,25 +96,26 @@ class DockletHTTPRequestHandler(BaseHTTPRequestHandler):
 				if NAT_ID > 255:
 					raise Exception("create operation failed")
 				uuid = '%s-%s-0' % (user, NAT_ID)
-				ipaddr = self.execute(os.path.dirname(sys.argv[0]) + '/dl-weave start %s' % uuid, WORK_ON)
-				return {'ip': ipaddr, 'uuid': uuid, 'work_on': WORK_ON}
+				ipaddr = commands.getoutput('./dl-weave start %s' % uuid)
+				return {'ip': ipaddr, 'uuid': uuid, 'work_on': DockletHandler.localaddr}
 			elif parts[0] == "remove":
 				cls = self.etcd_list_clusters(user)
 				obj = cls[0]['nodes']
 				if len(obj)!=1:
 					raise Exception("please scalein the cluster first")
 				clusterInt = int(cls[0]['id'])
-				WORK_ON = obj[0]['work_on']
-				if self.execute(os.path.dirname(sys.argv[0]) + '/dl-weave stop %s-%s-0' % (user, clusterInt), WORK_ON)==None:
+				assert( DockletHandler.localaddr == obj[0]['work_on'] )
+				if commands.getoutput('./dl-weave stop %s-%s-0' % (user, clusterInt)) == None:
 					raise Exception("exit operation failed")
-				return {'master': WORK_ON, 'natid': clusterInt}
+				return {'master': DockletHandler.localaddr, 'natid': clusterInt}
 			elif parts[0] == "restart":
 				cls = self.etcd_list_clusters(user)
 				obj = cls[0]['nodes']
 				status = []
 				for s in obj:
 					[mac, uuid, ipaddr] = [s['work_on'], s['uuid'], s['nat_id']]
-					status.append({"uuid": uuid, "status": self.execute(os.path.dirname(sys.argv[0]) + '/dl-weave start %s' % uuid, mac)!=None})
+					assert( DockletHandler.localaddr == mac)
+					status.append({"uuid": uuid, "status": commands.getoutput('./dl-weave start %s' % uuid) != None})
 				return {"status": status}
 			elif parts[0] == "scalein":
 				cls = self.etcd_list_clusters(user)
@@ -131,20 +124,20 @@ class DockletHTTPRequestHandler(BaseHTTPRequestHandler):
 					raise Exception("no more slaves to scale in")
 				s = max(obj, key=lambda x: int(x['uuid'].split('-')[-1]))
 				[mac, uuid, ipaddr] = [s['work_on'], s['uuid'], s['nat_id']]
-				self.execute(os.path.dirname(sys.argv[0]) + '/dl-weave stop %s' % uuid, mac)
-				return {'ip':ipaddr, 'uuid':uuid, 'work_on':mac}
+				commands.getoutput('./dl-weave stop %s' % uuid)
+				assert( DockletHandler.localaddr == mac)
+				return {'ip':ipaddr, 'uuid':uuid, 'work_on':DockletHandler.localaddr}
 			elif parts[0] == "scaleout":
 				cls = self.etcd_list_clusters(user)
 				obj = cls[0]['nodes']
-				limit = 2 * len(self.etcd_get_machines())
+				limit = 4 * len(self.etcd_get_machines())
 				if len(obj)>=limit:
 					raise Exception("no more resources to scale out")
 				node_id = len(obj)
 				clusterInt = int(cls[0]['id'])
-				mac = commands.getoutput(os.path.dirname(sys.argv[0]) + '/dl-join network')#self.etcd_get_random_machine()
 				uuid = '%s-%s-%s' % (user, clusterInt, node_id)
-				ipaddr = self.execute(os.path.dirname(sys.argv[0]) + '/dl-weave start %s' % uuid, mac)
-				return {'ip':ipaddr, 'uuid':uuid, 'work_on': mac}
+				ipaddr = commands.getoutput('./dl-weave start %s' % uuid)
+				return {'ip':ipaddr, 'uuid':uuid, 'work_on': DockletHandler.localaddr}
 		
 		raise Exception('unsupported request!')
 	
@@ -184,5 +177,7 @@ class DockletHTTPRequestHandler(BaseHTTPRequestHandler):
 		return
 
 if __name__ == '__main__':
-	server = HTTPServer(('0.0.0.0', 8000), DockletHTTPRequestHandler)
+	os.chdir(os.path.dirname(sys.argv[0]))
+	DockletHandler.localaddr = commands.getoutput('./dl-join network')
+	server = HTTPServer(('0.0.0.0', 8000), DockletHandler)
 	server.serve_forever()

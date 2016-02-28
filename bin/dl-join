@@ -3,7 +3,7 @@
 DIR_NAME=$(dirname $0)
 CUR_DIR=$(pwd)
 
-DEPENDS="rsync cgroup-lite lxc lvm2 bridge-utils curl sshfs netcat-openbsd net-tools psmisc openssh-server criu openvswitch-switch"
+DEPENDS="rsync cgroup-lite lxc lxc-templates lvm2 bridge-utils curl sshfs netcat-openbsd net-tools psmisc openssh-server criu openvswitch-switch"
 
 if ! dpkg -L ${DEPENDS} >/dev/null 2>&1; then apt-get install -y --no-install-recommends ${DEPENDS}; fi
 
@@ -19,7 +19,7 @@ function log_msg {
 }
 
 function get_address {
-	ADDRESS=`ip route | awk '{ if ($3=="'$(ip route | grep ^default | awk '{print $5}')'") print $9 }' | tail -n 1`
+	ADDRESS=`ip route | awk '{ if ($3=="'$(ip route | grep "^default via" | tail -n 1 | awk '{print $5}')'") print $9 }' | tail -n 1`
 	echo ${ADDRESS:-10.10.0.1}
 	unset ADDRESS
 	# nmap -sP "${MACHINE_CIDR}" | grep report | awk '{print $NF}' | awk -F\( '{print $NF}' | awk -F\) '{print $1}'
@@ -117,6 +117,7 @@ function setup_rootfs {
 		chroot . apt-get install -y --no-install-recommends openssh-server upstart-sysv bash-completion iproute2 vim-tiny
 		sed -i 's/without-password/yes/g' ./etc/ssh/sshd_config
 		sed -i 's/prohibit-password/yes/g' ./etc/ssh/sshd_config
+		sed -i 's/#.*StrictHostKeyChecking ask/StrictHostKeyChecking no/g' ./etc/ssh/ssh_config
 		mkdir -p nfs
 	fi
 	

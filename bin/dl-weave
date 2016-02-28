@@ -177,9 +177,8 @@ elif [[ "${TYPE}" == "cp" ]]; then
 	
 	if ! lxc-info -n ${UUID} >/dev/null 2>&1; then exit 1; fi
 
-	if ! lxc-checkpoint -s -D `pwd`/cp -n ${UUID} >/dev/null 2>&1; then
-		rm -r ./cp
-		echo "Checkpoint for ${UUID} failed!"
+	if ! lxc-checkpoint -s -D `pwd`/cp -n ${UUID}; then
+		rm -rf ./cp >/dev/null 2>&1 || true
 		exit 1
 	fi
 
@@ -207,9 +206,8 @@ elif [[ "${TYPE}" == "rv" ]]; then
 	rm -f /home/docklet/global/${UUID}.tgz
 	mount -t aufs -o br=diff/overlayfs=rw:/home/docklet/local/filesystem=ro+wh none rootfs/
 	
-	if ! lxc-checkpoint -r -D `pwd`/cp -n ${UUID} >/dev/null 2>&1; then
-		rm -rf ./cp
-		echo "Recovery for ${UUID} failed!"
+	if ! lxc-checkpoint -r -D `pwd`/cp -n ${UUID}; then
+		rm -rf ./cp >/dev/null 2>&1 || true
 		exit 1
 	fi
 

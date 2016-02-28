@@ -13,7 +13,7 @@ NAT_CONV=${IP_CONV:-\{print 10.10.${NAT_ID}.${NODE_ID}\"/\"16\}}
 NATADDR=$(echo ${UUID} | awk -F\- "${NAT_CONV}")
 
 log "# This is standard login interface:"
-curl -H "Auth:docklet/docklet" "http://0.0.0.0:8000/user/login"
+curl -F user=docklet -F key=docklet "http://0.0.0.0:8000/clusters"
 echo ; read -p 'Press [Enter] to continue ..' ; clear
 
 log "# Creating clusters:"
