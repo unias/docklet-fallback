@@ -2,6 +2,14 @@
 
 set -e
 
+if which python2 >/dev/null; then
+	EXEC=python2
+else
+	EXEC=python3
+fi
+
+PYJSONPREF="import sys, json; obj = json.load(sys.stdin);"
+
 if [[ "$@" == "" ]]; then
 	echo -e "\033[34mUsage for lookup info:\033[0m docklet [clusterid|owner|info|hosts|status|sshkey]\n" > /dev/stderr
 	echo -e "\033[34mUsage for control cluster:\033[0m docklet [nfs|scaleout|scalein|restart|remove]\n" > /dev/stderr
@@ -19,7 +27,7 @@ elif [[ "$@" == "mpi-flags" ]]; then
 	done
 	echo "-hosts ${HOSTS} -n ${NUM}"
 elif [[ "$@" == "hostnum" ]]; then
-	docklet info | python -c 'import sys, json; print len(json.load(sys.stdin)["data"]["clusters"][0]["nodes"])' 2>/dev/null
+	docklet info | ${EXEC} -c "${PYJSONPREF} print(len(obj['data']['clusters'][0]['nodes']))" 2>/dev/null
 elif [[ "$@" == "status" ]]; then
 	NUM=$(docklet hostnum)
 	for (( I = 0 ; I < ${NUM} ; ++ I )); do
@@ -30,14 +38,14 @@ elif [[ "$@" == "status" ]]; then
 elif [[ "$@" == "info" ]]; then
 	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://10.10.0.1:8000/clusters 2>/dev/null
 elif [[ "$1" == "scaleout" ]]; then
-	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://10.10.0.1:8000/clusters/scaleout
+	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://10.10.0.1:8000/clusters/scaleout 2>/dev/null | ${EXEC} -c "${PYJSONPREF} print(obj['data']['ip'])" 2>/dev/null
 elif [[ "$1" == "scalein" ]]; then
-	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://10.10.0.1:8000/clusters/scalein
+	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://10.10.0.1:8000/clusters/scalein 2>/dev/null | ${EXEC} -c "${PYJSONPREF} print(obj['data']['uuid'])" 2>/dev/null
 elif [[ "$1" == "remove" ]]; then
 	while docklet scalein >/dev/null; do echo 'Releasing a slave node ..'; done
-        curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters/remove 2>/dev/null
+	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://10.10.0.1:8000/clusters/remove 2>/dev/null
 elif [[ "$@" == "restart" ]]; then
-	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://docklet-cloud:8000/clusters/$(docklet clusterid)/restart 2>/dev/null
+	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://10.10.0.1:8000/clusters/$(docklet clusterid)/restart 2>/dev/null
 elif [[ "$1" == "deps" ]]; then
 	shift; DEPENDS="$@"
 	if [[ "${DEPENDS}" != "" ]]; then

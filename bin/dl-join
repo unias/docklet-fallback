@@ -113,8 +113,9 @@ function setup_rootfs {
 	if [[ ! -e ./nfs ]]; then
 		curl -L http://mirrors.ustc.edu.cn/ubuntu-cdimage/ubuntu-core/releases/15.10/release/ubuntu-core-15.10-core-amd64.tar.gz | tar xzvf - -C . >/dev/null
 		cp /etc/resolv.conf ./etc
+		echo 'deb http://mirrors.ustc.edu.cn/ubuntu wily main restricted universe multiverse' > ./etc/apt/sources.list
 		chroot . apt-get update
-		chroot . apt-get install -y --no-install-recommends openssh-server upstart-sysv bash-completion iproute2 vim-tiny
+		chroot . apt-get install -y --no-install-recommends openssh-server upstart-sysv bash-completion iproute2 vim-tiny net-tools psmisc curl python inetutils-ping
 		sed -i 's/without-password/yes/g' ./etc/ssh/sshd_config
 		sed -i 's/prohibit-password/yes/g' ./etc/ssh/sshd_config
 		sed -i 's/#.*StrictHostKeyChecking ask/StrictHostKeyChecking no/g' ./etc/ssh/ssh_config
@@ -147,6 +148,7 @@ setup_rootfs
 
 killall dl-httprest >/dev/null 2>&1 || true
 
+log_msg "INFO" "Deamon launching .."
 exec ${DIR_NAME}/dl-httprest
 
 nohup ${DIR_NAME}/dl-httprest >/dev/null 2>&1 &
