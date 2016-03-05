@@ -27,14 +27,13 @@ function get_address {
 
 HOST_IP=$(get_address); if [[ "$@" == "network" ]]; then echo ${HOST_IP}; exit 0; fi
 
-grep cgroup_enable=memory /proc/cmdline >/dev/null || grep swapaccount=1 /proc/cmdline >/dev/null || log_msg "ERROR" "Memory Account not enabled."
+grep swapaccount=1 /proc/cmdline >/dev/null || log_msg "ERROR" "Swap Account not enabled."
 
 log_msg "INFO" "IP of this host is ${HOST_IP}."
 
 log_msg "INFO" "Checking Environment for Docklet Cluster .."
 
 [[ "`whoami`" != "root" ]] && log_msg "ERROR" "Root previledge required!"
-[[ "`cat /proc/cmdline | grep cgroup`" == "" ]] && log_msg "ERROR" "Memory limit not enabled!"
 
 ip link delete lxcbr0 >/dev/null 2>&1 || true
 
