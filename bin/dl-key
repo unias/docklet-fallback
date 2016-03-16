@@ -1,19 +1,19 @@
 #!/bin/bash
 
-. /home/docklet/global/docklet.conf
+. /var/lib/docklet/global/docklet.conf
 
 [[ "`whoami`" != "root" ]] && echo "Root previledge required!" && exit 1
 
 [[ "${USER_NAME}" == "" ]] && echo "USER_NAME not specified!" && exit 1
 
-mkdir -p /home/docklet/global/users/${USER_NAME}/{ssh_keys,home/.docklet/{job,log,nodes/current}}
+mkdir -p /var/lib/docklet/global/users/${USER_NAME}/{ssh_keys,home/.docklet/{job,log,nodes/current}}
 
-if [[ ! -e "/home/docklet/global/users/${USER_NAME}/ssh_keys/id_rsa" ]]; then
-	rm -rf /home/docklet/global/users/${USER_NAME}/ssh_keys/*
-	yes | ssh-keygen -t rsa -P '' -f "/home/docklet/global/users/${USER_NAME}/ssh_keys/id_rsa" >/dev/null 2>&1
-	mv "/home/docklet/global/users/${USER_NAME}/ssh_keys/id_rsa.pub" "/home/docklet/global/users/${USER_NAME}/ssh_keys/authorized_keys"
+if [[ ! -e "/var/lib/docklet/global/users/${USER_NAME}/ssh_keys/id_rsa" ]]; then
+	rm -rf /var/lib/docklet/global/users/${USER_NAME}/ssh_keys/*
+	yes | ssh-keygen -t rsa -P '' -f "/var/lib/docklet/global/users/${USER_NAME}/ssh_keys/id_rsa" >/dev/null 2>&1
+	mv "/var/lib/docklet/global/users/${USER_NAME}/ssh_keys/id_rsa.pub" "/var/lib/docklet/global/users/${USER_NAME}/ssh_keys/authorized_keys"
 fi
 
-cat "/home/docklet/global/users/${USER_NAME}/ssh_keys/id_rsa"
+cat "/var/lib/docklet/global/users/${USER_NAME}/ssh_keys/id_rsa"
 echo -n "========"
-cat "/home/docklet/global/users/${USER_NAME}/home/.docklet/config" 2>/dev/null || true
+cat "/var/lib/docklet/global/users/${USER_NAME}/home/.docklet/config" 2>/dev/null || true

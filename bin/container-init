@@ -1,24 +1,7 @@
-#!/bin/bash -x
-
-export TERM=xterm
-
-function init {
-
-	while true; do ping docklet-cloud -c 1 -w 2 && break; done
-	while true; do ping $(cat /etc/resolv.conf | awk '{print $2}') -c 1 -w 2 && break; done
-
-	cd /nfs/.docklet/job/workspace
-	rm -f /nfs/.docklet/log/dl-claas.log
-	
-	while [[ ! -e /nfs/.docklet/job/workspace/main ]]; do sleep 1s; done
-
-	ssh 0.0.0.0 "cd /nfs/.docklet/job/workspace; \
-		TERM=xterm ./main " >> /nfs/.docklet/log/dl-claas.log 2>&1
-
-	while true; do sleep 1h; done
-}
+#!/bin/bash -e
 
 service ssh start
 
-init && exit
-
+while true; do
+	sleep 365d
+done

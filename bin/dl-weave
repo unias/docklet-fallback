@@ -3,7 +3,7 @@
 DIR_NAME=$(dirname $0)
 CUR_DIR=$(pwd)
 
-. /home/docklet/global/docklet.conf
+. /var/lib/docklet/global/docklet.conf
 
 TYPE=$1 ; shift
 UUID=$1 ; shift || true
@@ -23,7 +23,7 @@ if [[ "${TYPE}" == "start" ]]; then
 
 	NAT_ID=${NAT_ID} USER_NAME=${USER_NAME} ${DIR_NAME}/dl-key >/dev/null 2>&1 || true
 
-	mkdir -p /var/lib/lxc/${UUID} /home/docklet/global/users/${USER_NAME}/home/.docklet/nodes/${NODE_ID}
+	mkdir -p /var/lib/lxc/${UUID} /var/lib/docklet/global/users/${USER_NAME}/home/.docklet/nodes/${NODE_ID}
 
 	cat <<EOF > /var/lib/lxc/${UUID}/config
 lxc.include = /usr/share/lxc/config/ubuntu.common.conf
@@ -90,8 +90,8 @@ lxc.seccomp =
 
 #lxc.mount.entry = devpts ${TARGET}/dev/pts devpts newinstance,ptmxmode=0666,nosuid,noexec 0 0
 
-#lxc.mount.entry = /home/docklet/global/users/${USER_NAME}/home ${TARGET}/nfs none rbind,rw 0 0
-#lxc.mount.entry = /home/docklet/global/users/${USER_NAME}/home/.docklet/nodes/${NODE_ID} ${TARGET}/nfs/.docklet/nodes/current none rbind,rw 0 0
+#lxc.mount.entry = /var/lib/docklet/global/users/${USER_NAME}/home ${TARGET}/nfs none rbind,rw 0 0
+#lxc.mount.entry = /var/lib/docklet/global/users/${USER_NAME}/home/.docklet/nodes/${NODE_ID} ${TARGET}/nfs/.docklet/nodes/current none rbind,rw 0 0
 
 EOF
 	lxc-stop -k -n ${UUID} >/dev/null 2>&1 || true
@@ -103,8 +103,8 @@ EOF
 	mount /dev/dl-devmapper/${UUID} ${LAYER} >/dev/null 2>&1 || true
 	
 	mkdir -p ${LAYER}/{work,overlayfs}
-	# mount -t overlay overlay -olowerdir=/home/docklet/local/filesystem,upperdir=${LAYER}/overlayfs,workdir=${LAYER}/work ${TARGET}/
-	mount -t aufs -o br=${LAYER}/overlayfs=rw:/home/docklet/local/filesystem=ro+wh none ${TARGET}/
+	# mount -t overlay overlay -olowerdir=/var/lib/docklet/local/filesystem,upperdir=${LAYER}/overlayfs,workdir=${LAYER}/work ${TARGET}/
+	mount -t aufs -o br=${LAYER}/overlayfs=rw:/var/lib/docklet/local/filesystem=ro+wh none ${TARGET}/
 	
 	cat <<EOF > ${TARGET}/etc/hosts
 127.0.0.1 host-${NAT_ID}_${USER_NAME}
@@ -118,10 +118,10 @@ EOF
 
 	mkdir -p ${TARGET}/root/.ssh
 	
-	rsync -Ha ${DIR_NAME}/container-init ${TARGET}/init
+	rsync -Ha ${DIR_NAME}/container-init ${TARGET}/sbin/init
 	rsync -Ha ${DIR_NAME}/container-docklet ${TARGET}/usr/bin/docklet
-	rsync -Ha /home/docklet/global/users/${USER_NAME}/ssh_keys/id_rsa ${TARGET}/root/.ssh/id_rsa
-	rsync -Ha /home/docklet/global/users/${USER_NAME}/ssh_keys/authorized_keys ${TARGET}/root/.ssh/authorized_keys
+	rsync -Ha /var/lib/docklet/global/users/${USER_NAME}/ssh_keys/id_rsa ${TARGET}/root/.ssh/id_rsa
+	rsync -Ha /var/lib/docklet/global/users/${USER_NAME}/ssh_keys/authorized_keys ${TARGET}/root/.ssh/authorized_keys
 	
 	lxc-start -n ${UUID}
 	echo ${NATADDR_NOMASK}
@@ -182,7 +182,7 @@ elif [[ "${TYPE}" == "cp" ]]; then
 		exit 1
 	fi
 
-	tar czvf /home/docklet/global/${UUID}.tgz {config,diff,cp} >/dev/null 2>&1
+	tar czvf /var/lib/docklet/global/${UUID}.tgz {config,diff,cp} >/dev/null 2>&1
 
 	umount ./rootfs ./diff -l >/dev/null 2>&1 || true
 
@@ -202,9 +202,9 @@ elif [[ "${TYPE}" == "rv" ]]; then
 	yes | mkfs.ext4 /dev/dl-devmapper/${UUID} >/dev/null 2>&1 || true
 	mount /dev/dl-devmapper/${UUID} ${LAYER} || true
 	
-	tar xvf /home/docklet/global/${UUID}.tgz >/dev/null 2>&1
-	rm -f /home/docklet/global/${UUID}.tgz
-	mount -t aufs -o br=diff/overlayfs=rw:/home/docklet/local/filesystem=ro+wh none rootfs/
+	tar xvf /var/lib/docklet/global/${UUID}.tgz >/dev/null 2>&1
+	rm -f /var/lib/docklet/global/${UUID}.tgz
+	mount -t aufs -o br=diff/overlayfs=rw:/var/lib/docklet/local/filesystem=ro+wh none rootfs/
 	
 	if ! lxc-checkpoint -r -D `pwd`/cp -n ${UUID}; then
 		rm -rf ./cp >/dev/null 2>&1 || true

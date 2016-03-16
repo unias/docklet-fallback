@@ -30,7 +30,7 @@ class DockletHandler(BaseHTTPRequestHandler):
 		if username=='root':
 			loggedIn = False
 		else:
-			rsa_buff = commands.getoutput("cat /home/docklet/global/users/%s/ssh_keys/id_rsa 2>/dev/null" % username).strip()
+			rsa_buff = commands.getoutput("cat /var/lib/docklet/global/users/%s/ssh_keys/id_rsa 2>/dev/null" % username).strip()
 			loggedIn = (rsa_buff != '' and password == rsa_buff)
 			if not loggedIn:
 				try:
@@ -43,7 +43,7 @@ class DockletHandler(BaseHTTPRequestHandler):
 		return username
 
 	def etcd_get_machines(self):
-		return os.listdir('/home/docklet/global/machines/')
+		return os.listdir('/var/lib/docklet/global/machines/')
 
 	def etcd_get_random_machine(self):
 		cl = self.etcd_get_machines()
@@ -51,7 +51,7 @@ class DockletHandler(BaseHTTPRequestHandler):
 
 	def etcd_list_clusters(self, user):
 		try:
-			nodes = commands.getoutput("ls /home/docklet/global/machines/*/%s-* 2>/dev/null | awk -F\- '{print $2}'" % user).split()
+			nodes = commands.getoutput("ls /var/lib/docklet/global/machines/*/%s-* 2>/dev/null | awk -F\- '{print $2}'" % user).split()
 			clusters = []
 			for item in nodes:
 				try:
@@ -66,7 +66,7 @@ class DockletHandler(BaseHTTPRequestHandler):
 			return {}
 
 	def etcd_list_single_cluster(self, user, cl_id):
-		datas = commands.getoutput("ls /home/docklet/global/machines/*/%s-%s-* 2>/dev/null | cut -b 31-" % (user, cl_id)).split()
+		datas = commands.getoutput("ls /var/lib/docklet/global/machines/*/%s-%s-* 2>/dev/null | cut -b 31-" % (user, cl_id)).split()
 		if len(datas) > 0:
 			nodes = []
 			for node in datas:
@@ -88,7 +88,7 @@ class DockletHandler(BaseHTTPRequestHandler):
 				if len(cls)>0:
 					raise Exception("your cluster is already booted")
 				NAT_ID = 1
-				nat_list = commands.getoutput("ls /home/docklet/global/machines/*/* 2>/dev/null | awk -F\- '{print $2}'")
+				nat_list = commands.getoutput("ls /var/lib/docklet/global/machines/*/* 2>/dev/null | awk -F\- '{print $2}'")
 				if nat_list != None:
 					nat_list = nat_list.split()
 					while str(NAT_ID) in nat_list:

@@ -37,16 +37,16 @@ log_msg "INFO" "Checking Environment for Docklet Cluster .."
 
 ip link delete lxcbr0 >/dev/null 2>&1 || true
 
-log_msg "INFO" "Remounting NFS /home/docklet/global .."
+log_msg "INFO" "Remounting NFS /var/lib/docklet/global .."
 
-mkdir -p /home/docklet/global
-if ! mountpoint /home/docklet/global -q; then `${NFS_MOUNT_CMD:-mount -o bind /mnt /home/docklet/global}`; fi
-mkdir -p /home/docklet/global/{users,machines/${HOST_IP}}
+mkdir -p /var/lib/docklet/global
+if ! mountpoint /var/lib/docklet/global -q; then `${NFS_MOUNT_CMD:-mount -o bind /mnt /var/lib/docklet/global}`; fi
+mkdir -p /var/lib/docklet/global/{users,machines/${HOST_IP}}
 rm -rf /var/run/netns
-ln -s /home/docklet/global/machines/${HOST_IP} /var/run/netns
+ln -s /var/lib/docklet/global/machines/${HOST_IP} /var/run/netns
 
-touch /home/docklet/global/docklet.conf
-. /home/docklet/global/docklet.conf
+touch /var/lib/docklet/global/docklet.conf
+. /var/lib/docklet/global/docklet.conf
 
 if [[ "${IP_DEV:-ovs-bridge}" == "ovs-bridge" ]]; then
 	log_msg "WARN" "Setting up for localhost."
@@ -91,7 +91,7 @@ fi
 
 log_msg "INFO" "Setting up for local LVM .."
 
-LOOP="/home/docklet/local/dl-localdevmapper.lo"
+LOOP="/var/lib/docklet/local/dl-localdevmapper.lo"
 
 if [[ ! -e "${LOOP}" ]]; then mkdir -p `dirname "${LOOP}"`; dd if=/dev/zero of=${LOOP} bs=1M seek=102400 count=0 ; fi
 
@@ -103,24 +103,27 @@ vgcreate dl-devmapper /dev/loop0 >/dev/null 2>&1 || true
 function setup_rootfs {
 	set -e
 	
-	ROOTFS=/home/docklet/local/filesystem
+	ROOTFS=/var/lib/docklet/local/filesystem
 	
 	mkdir -p ${ROOTFS}
 	
 	cd ${ROOTFS}
+	if [[ ! -e ./etc ]]; then
+		curl -L http://mirrors.ustc.edu.cn/ubuntu-cdimage/ubuntu-core/releases/15.10/release/ubuntu-core-15.10-core-amd64.tar.gz | tar xzvf - -C . >/dev/null
+		echo 'deb http://mirrors.ustc.edu.cn/ubuntu wily main restricted universe multiverse' > ./etc/apt/sources.list
+	fi
 	
 	if [[ ! -e ./nfs ]]; then
-		curl -L http://mirrors.ustc.edu.cn/ubuntu-cdimage/ubuntu-core/releases/15.10/release/ubuntu-core-15.10-core-amd64.tar.gz | tar xzvf - -C . >/dev/null
 		cp /etc/resolv.conf ./etc
-		echo 'deb http://mirrors.ustc.edu.cn/ubuntu wily main restricted universe multiverse' > ./etc/apt/sources.list
 		chroot . apt-get update
-		chroot . apt-get install -y --no-install-recommends openssh-server upstart-sysv bash-completion iproute2 vim-tiny net-tools psmisc curl python inetutils-ping
+		chroot . apt-get install -y --no-install-recommends openssh-server bash-completion iproute2 vim-tiny net-tools psmisc curl python iputils-ping
 		sed -i 's/without-password/yes/g' ./etc/ssh/sshd_config
 		sed -i 's/prohibit-password/yes/g' ./etc/ssh/sshd_config
 		sed -i 's/#.*StrictHostKeyChecking ask/StrictHostKeyChecking no/g' ./etc/ssh/ssh_config
+		
 		mkdir -p nfs
 	fi
-	
+
 	rm -rf dev/{console,null,zero,tty,random,urandom,ptmx}
 	mknod -m 622 dev/console c 5 1
 	mknod -m 666 dev/null c 1 3
