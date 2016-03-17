@@ -139,8 +139,6 @@ function setup_rootfs {
 	ln -s /proc/self/fd/2 dev/stderr
 	ln -s /proc/self/fd dev/fd
 	
-	echo "" > etc/resolv.conf
-	echo "nameserver ${DNS_SERVER:-10.10.0.1}" >> etc/resolv.conf
 	echo "LANG=en_US.UTF-8" > etc/default/locale
 	
 	cd ${CUR_DIR}

@@ -106,11 +106,13 @@ EOF
 	# mount -t overlay overlay -olowerdir=/var/lib/docklet/local/filesystem,upperdir=${LAYER}/overlayfs,workdir=${LAYER}/work ${TARGET}/
 	mount -t aufs -o br=${LAYER}/overlayfs=rw:/var/lib/docklet/local/filesystem=ro+wh none ${TARGET}/
 	
-	cat <<EOF > ${TARGET}/etc/hosts
-127.0.0.1 host-${NAT_ID}_${USER_NAME}
-127.0.0.1 localhost
-EOF
-#${NATADDR_NOMASK} ${UUID}
+	cat <<-EOF > ${TARGET}/etc/hosts
+	127.0.0.1 host-${NAT_ID}_${USER_NAME}
+	127.0.0.1 localhost
+	EOF
+	#${NATADDR_NOMASK} ${UUID}
+
+	echo "nameserver ${DNS_SERVER:-10.10.0.1}" > ${TARGET}/etc/resolv.conf
 
 	for (( I = 0 ; I < 20 ; ++ I )); do
 		echo "10.10.${NAT_ID}.${I} ${USER_NAME}-${NAT_ID}-${I}" >> ${TARGET}/etc/hosts
