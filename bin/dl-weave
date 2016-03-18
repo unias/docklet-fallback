@@ -37,6 +37,7 @@ lxc.utsname = ${UUID}
 lxc.autodev = 0
 
 lxc.network.type = veth
+lxc.network.veth.pair = ${UUID}
 lxc.network.name = eth0
 lxc.network.link = ${IP_DEV:-ovs-bridge}
 lxc.network.ipv4 = ${NATADDR}
