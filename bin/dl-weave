@@ -99,12 +99,12 @@ EOF
 	rm -rf ${TARGET}
 	mkdir -p ${TARGET} ${LAYER}
 	
-	lvcreate -L ${DISK_LIMIT_MB:-2048} -n ${UUID} dl-devmapper >/dev/null 2>&1 && yes | mkfs.ext4 /dev/dl-devmapper/${UUID} >/dev/null 2>&1 || true
-	mount /dev/dl-devmapper/${UUID} ${LAYER} >/dev/null 2>&1 || true
+	# lvcreate -L ${DISK_LIMIT_MB:-2048} -n ${UUID} dl-devmapper >/dev/null 2>&1 && yes | mkfs.ext4 /dev/dl-devmapper/${UUID} >/dev/null 2>&1 || true
+	# mount /dev/dl-devmapper/${UUID} ${LAYER} >/dev/null 2>&1 || true
 	
 	mkdir -p ${LAYER}/{work,overlayfs}
-	# mount -t overlay overlay -olowerdir=/var/lib/docklet/local/filesystem,upperdir=${LAYER}/overlayfs,workdir=${LAYER}/work ${TARGET}/
-	mount -t aufs -o br=${LAYER}/overlayfs=rw:/var/lib/docklet/local/filesystem=ro+wh none ${TARGET}/
+	mount -t overlay overlay -olowerdir=/var/lib/docklet/local/filesystem,upperdir=${LAYER}/overlayfs,workdir=${LAYER}/work ${TARGET}/
+	# mount -t aufs -o br=${LAYER}/overlayfs=rw:/var/lib/docklet/local/filesystem=ro+wh none ${TARGET}/
 	
 	cat <<-EOF > ${TARGET}/etc/hosts
 	127.0.0.1 host-${NAT_ID}_${USER_NAME}
@@ -168,7 +168,7 @@ elif [[ "${TYPE}" == "stop" ]]; then
 	umount -l ${LAYER} >/dev/null 2>&1 || true
 	rm -rf ${LAYER}
 	rm -rf /var/lib/lxc/${UUID} /var/run/netns/${UUID}
-	yes | lvremove /dev/dl-devmapper/${UUID} >/dev/null 2>&1
+	# yes | lvremove /dev/dl-devmapper/${UUID} >/dev/null 2>&1
 
 	#IP_EXT=$(dl-join network)
 	#PORT_EXT="2`printf "%03d" ${NAT_ID}`${NODE_ID}"
@@ -194,15 +194,14 @@ elif [[ "${TYPE}" == "cp" ]]; then
 	#iptables -t nat -D POSTROUTING -s ${NATADDR} -j SNAT --to ${IP_EXT} || true
 
 	rm -rf /var/lib/lxc/${UUID} /var/run/netns/${UUID}
-	yes | lvremove /dev/dl-devmapper/${UUID} >/dev/null 2>&1
+	# yes | lvremove /dev/dl-devmapper/${UUID} >/dev/null 2>&1
 elif [[ "${TYPE}" == "rv" ]]; then
 	mkdir -p /var/lib/lxc/${UUID}/rootfs
 	cd /var/lib/lxc/${UUID}
 
 	mkdir -p ${LAYER}
-	lvcreate -L ${DISK_LIMIT_MB:-2048} -n ${UUID} dl-devmapper >/dev/null 2>&1
-	yes | mkfs.ext4 /dev/dl-devmapper/${UUID} >/dev/null 2>&1 || true
-	mount /dev/dl-devmapper/${UUID} ${LAYER} || true
+	# lvcreate -L ${DISK_LIMIT_MB:-2048} -n ${UUID} dl-devmapper >/dev/null 2>&1 && yes | mkfs.ext4 /dev/dl-devmapper/${UUID} >/dev/null 2>&1 || true
+	# mount /dev/dl-devmapper/${UUID} ${LAYER} || true
 	
 	tar xvf /var/lib/docklet/global/${UUID}.tgz >/dev/null 2>&1
 	rm -f /var/lib/docklet/global/${UUID}.tgz

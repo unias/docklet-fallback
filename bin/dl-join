@@ -3,7 +3,7 @@
 DIR_NAME=$(dirname $0)
 CUR_DIR=$(pwd)
 
-DEPENDS="rsync cgroup-lite lxc lxc-templates lvm2 bridge-utils curl sshfs netcat-openbsd net-tools psmisc openssh-server criu openvswitch-switch"
+DEPENDS="rsync cgroup-lite lxc lxc-templates lxcfs bridge-utils curl sshfs netcat-openbsd net-tools psmisc openssh-server criu openvswitch-switch"
 
 if ! dpkg -L ${DEPENDS} >/dev/null 2>&1; then apt-get install -y --no-install-recommends ${DEPENDS}; fi
 
@@ -89,14 +89,11 @@ if [[ "${IP_DEV:-ovs-bridge}" == "ovs-bridge" ]]; then
 	dnsmasq -u lxc-dnsmasq --strict-order --bind-interfaces --pid-file=/run/lxc/dl-dnsmasq.pid --listen-address 10.10.0.1 --except-interface=lo --interface=ovs-bridge --dhcp-authoritative >/dev/null 2>&1 || true
 fi
 
-log_msg "INFO" "Setting up for local LVM .."
-
-LOOP="/var/lib/docklet/local/dl-localdevmapper.lo"
-
-if [[ ! -e "${LOOP}" ]]; then mkdir -p `dirname "${LOOP}"`; dd if=/dev/zero of=${LOOP} bs=1M seek=102400 count=0 ; fi
-
-losetup /dev/loop0 ${LOOP} >/dev/null 2>&1 || true
-vgcreate dl-devmapper /dev/loop0 >/dev/null 2>&1 || true
+# log_msg "INFO" "Setting up for local LVM .."
+# LOOP="/var/lib/docklet/local/dl-localdevmapper.lo"
+# if [[ ! -e "${LOOP}" ]]; then mkdir -p `dirname "${LOOP}"`; dd if=/dev/zero of=${LOOP} bs=1M seek=102400 count=0 ; fi
+# losetup /dev/loop0 ${LOOP} >/dev/null 2>&1 || true
+# vgcreate dl-devmapper /dev/loop0 >/dev/null 2>&1 || true
 
 # domainname $(echo ${NIS_SERVER} | awk '{print $2}') >/dev/null 2>&1
 
