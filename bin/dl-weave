@@ -61,40 +61,40 @@ lxc.cgroup.devices.allow = c 5:0 rwm
 lxc.cgroup.devices.allow = c 1:9 rwm
 lxc.cgroup.devices.allow = c 1:8 rwm
 
-#lxc.cap.keep = 0
-#lxc.cap.keep = 1
-#lxc.cap.keep = 4
-#lxc.cap.keep = 3
-#lxc.cap.keep = 27
-#lxc.cap.keep = 13
-#lxc.cap.keep = 6
-#lxc.cap.keep = 7
-#lxc.cap.keep = 31
-#lxc.cap.keep = 8
-#lxc.cap.keep = 10
-#lxc.cap.keep = 18
-#lxc.cap.keep = 5
-#lxc.cap.keep = 29
+# lxc.cap.keep = 0
+# lxc.cap.keep = 1
+# lxc.cap.keep = 3
+# lxc.cap.keep = 4
+# lxc.cap.keep = 5
+# lxc.cap.keep = 6
+# lxc.cap.keep = 7
+# lxc.cap.keep = 8
+# lxc.cap.keep = 10
+# lxc.cap.keep = 13
+# lxc.cap.keep = 18
+# lxc.cap.keep = 27
+# lxc.cap.keep = 29
+# lxc.cap.keep = 31
 
-lxc.seccomp =
+# lxc.seccomp =
 
-# lxc.cap.drop = sys_admin net_admin mac_admin mac_override sys_time sys_module
+lxc.cap.drop = sys_admin net_admin mac_admin mac_override sys_time sys_module
 
-#lxc.cgroup.memory.kmem.limit_in_bytes = ${FOLK_BOMB_SPACE:-512m}
-#lxc.cgroup.memory.oom_control = 1
-#lxc.cgroup.memory.limit_in_bytes = $(( ${SOFT_MEMORY_QUOTA:-4294967296} * 4 ))
-#lxc.cgroup.memory.soft_limit_in_bytes = ${SOFT_MEMORY_QUOTA:-4294967296}
-#lxc.cgroup.memory.memsw.limit_in_bytes = $(( ${SOFT_MEMORY_QUOTA:-4294967296} * 16 ))
-#lxc.cgroup.cpu.cfs_quota_us = ${CPU_SHARE_QUOTA_US:-100000}
+# lxc.cgroup.memory.kmem.limit_in_bytes = ${FOLK_BOMB_SPACE:-512m}
+# lxc.cgroup.memory.oom_control = 1
+# lxc.cgroup.memory.limit_in_bytes = $(( ${SOFT_MEMORY_QUOTA:-4294967296} * 4 ))
+# lxc.cgroup.memory.soft_limit_in_bytes = ${SOFT_MEMORY_QUOTA:-4294967296}
+# lxc.cgroup.memory.memsw.limit_in_bytes = $(( ${SOFT_MEMORY_QUOTA:-4294967296} * 16 ))
+# lxc.cgroup.cpu.cfs_quota_us = ${CPU_SHARE_QUOTA_US:-100000}
 
-#lxc.mount.auto = proc sys
+lxc.mount.auto = proc sys
 
-#lxc.mount.entry = devpts ${TARGET}/dev/pts devpts newinstance,ptmxmode=0666,nosuid,noexec 0 0
-
-#lxc.mount.entry = /var/lib/docklet/global/users/${USER_NAME}/home ${TARGET}/nfs none rbind,rw 0 0
-#lxc.mount.entry = /var/lib/docklet/global/users/${USER_NAME}/home/.docklet/nodes/${NODE_ID} ${TARGET}/nfs/.docklet/nodes/current none rbind,rw 0 0
+# lxc.mount.entry = devpts ${TARGET}/dev/pts devpts newinstance,ptmxmode=0666,nosuid,noexec 0 0
+# lxc.mount.entry = /var/lib/docklet/global/users/${USER_NAME}/home ${TARGET}/nfs none rbind,rw 0 0
+# lxc.mount.entry = /var/lib/docklet/global/users/${USER_NAME}/home/.docklet/nodes/${NODE_ID} ${TARGET}/nfs/.docklet/nodes/current none rbind,rw 0 0
 
 EOF
+	
 	lxc-stop -k -n ${UUID} >/dev/null 2>&1 || true
 	umount -l ${TARGET} >/dev/null 2>&1 || true
 	rm -rf ${TARGET}
