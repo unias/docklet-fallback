@@ -176,6 +176,10 @@ elif [[ "${TYPE}" == "stop" ]]; then
 	#iptables -t nat -D PREROUTING -d ${IP_EXT} -p tcp -m tcp --dport ${PORT_EXT} -j DNAT --to ${NATADDR}:22 || true
 	#iptables -t nat -D POSTROUTING -s ${NATADDR} -j SNAT --to ${IP_EXT} || true
 elif [[ "${TYPE}" == "cp" ]]; then
+	set -x
+	
+	[[ ! -e /var/lib/docklet/global/${UUID}.sfs ]]
+	
 	cd /var/lib/lxc/${UUID}
 	
 	if ! lxc-info -n ${UUID} >/dev/null 2>&1; then exit 1; fi
@@ -185,7 +189,8 @@ elif [[ "${TYPE}" == "cp" ]]; then
 		exit 1
 	fi
 
-	tar czvf /var/lib/docklet/global/${UUID}.tgz {config,diff,cp} >/dev/null 2>&1
+	# tar czvf /var/lib/docklet/global/${UUID}.tgz {config,diff,cp} >/dev/null 2>&1
+	mksquashfs {config,diff,cp} /var/lib/docklet/global/${UUID}.sfs >/dev/null 2>&1
 
 	umount ./rootfs ./diff -l >/dev/null 2>&1 || true
 
@@ -197,23 +202,30 @@ elif [[ "${TYPE}" == "cp" ]]; then
 	rm -rf /var/lib/lxc/${UUID} /var/run/netns/${UUID}
 	# yes | lvremove /dev/dl-devmapper/${UUID} >/dev/null 2>&1
 elif [[ "${TYPE}" == "rv" ]]; then
+	set -x
+	
+	unsquashfs -dest /var/lib/lxc/${UUID} /var/lib/docklet/global/${UUID}.sfs >/dev/null 2>&1
+	chmod o-w /var/lib/lxc/${UUID}
+	
 	mkdir -p /var/lib/lxc/${UUID}/rootfs
 	cd /var/lib/lxc/${UUID}
 
-	mkdir -p ${LAYER}
+	# mkdir -p ${LAYER}
 	# lvcreate -L ${DISK_LIMIT_MB:-2048} -n ${UUID} dl-devmapper >/dev/null 2>&1 && yes | mkfs.ext4 /dev/dl-devmapper/${UUID} >/dev/null 2>&1 || true
 	# mount /dev/dl-devmapper/${UUID} ${LAYER} || true
 	
-	tar xvf /var/lib/docklet/global/${UUID}.tgz >/dev/null 2>&1
-	rm -f /var/lib/docklet/global/${UUID}.tgz
-	mount -t aufs -o br=diff/overlayfs=rw:/var/lib/docklet/local/filesystem=ro+wh none rootfs/
+	# tar xvf /var/lib/docklet/global/${UUID}.tgz >/dev/null 2>&1
+	
+	rm -f /var/lib/docklet/global/${UUID}.sfs
+	# mount -t aufs -o br=diff/overlayfs=rw:/var/lib/docklet/local/filesystem=ro+wh none rootfs/
+	mount -t overlay overlay -olowerdir=/var/lib/docklet/local/filesystem,upperdir=${LAYER}/overlayfs,workdir=${LAYER}/work ${TARGET}/
 	
 	if ! lxc-checkpoint -r -D `pwd`/cp -n ${UUID}; then
 		rm -rf ./cp >/dev/null 2>&1 || true
 		exit 1
 	fi
 
-	rm -rf ./cp /var/run/netns/${UUID}
+	rm -rf ./cp /var/run/netns/${UUID} 
 	PID=$(lxc-info -n ${UUID} -p -H)
 	ln -s /proc/${PID}/ns/net /var/run/netns/${UUID}
 
