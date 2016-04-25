@@ -121,10 +121,15 @@ EOF
 		echo "10.10.${NAT_ID}.${I} ${USER_NAME}-${NAT_ID}-${I}" >> ${TARGET}/etc/hosts
 	done
 
-	mkdir -p ${TARGET}/root/.ssh
+	mkdir -p ${TARGET}/{root/.ssh, sbin}
 	
-	rsync -Ha ${DIR_NAME}/container-init ${TARGET}/sbin/init
-	echo "${@:-sleep 365d}" >> ${TARGET}/sbin/init
+	cat <<-EOF > ${TARGET}/sbin/init
+	#!/bin/bash -e
+	service ssh start
+	${@:-sleep 365d}
+	EOF
+	chmod a+x ${TARGET}/sbin/init
+	
 	rsync -Ha ${DIR_NAME}/container-docklet ${TARGET}/usr/bin/docklet
 	rsync -Ha /var/lib/docklet/global/users/${USER_NAME}/ssh_keys/id_rsa ${TARGET}/root/.ssh/id_rsa
 	rsync -Ha /var/lib/docklet/global/users/${USER_NAME}/ssh_keys/authorized_keys ${TARGET}/root/.ssh/authorized_keys
