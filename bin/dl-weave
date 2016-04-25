@@ -121,7 +121,8 @@ EOF
 		echo "10.10.${NAT_ID}.${I} ${USER_NAME}-${NAT_ID}-${I}" >> ${TARGET}/etc/hosts
 	done
 
-	mkdir -p ${TARGET}/{root/.ssh, sbin}
+	mkdir -p ${TARGET}/{root/.ssh,sbin}
+	rm -f ${TARGET}/sbin/init
 	
 	cat <<-EOF > ${TARGET}/sbin/init
 	#!/bin/bash -e
