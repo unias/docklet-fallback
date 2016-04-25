@@ -3,7 +3,7 @@
 DIR_NAME=$(dirname $0)
 CUR_DIR=$(pwd)
 
-DEPENDS="rsync cgroup-lite lxc lxc-templates lxcfs bridge-utils curl sshfs squashfs-tools netcat-openbsd net-tools psmisc openssh-server criu openvswitch-switch"
+DEPENDS="rsync cgroup-lite lxc lxc-templates lxcfs bridge-utils curl sshfs squashfs-tools netcat-openbsd net-tools psmisc openssh-server" # criu openvswitch-switch
 
 if ! dpkg -L ${DEPENDS} >/dev/null 2>&1; then apt-get install -y --no-install-recommends ${DEPENDS}; fi
 
@@ -106,8 +106,8 @@ function setup_rootfs {
 	
 	cd ${ROOTFS}
 	if [[ ! -e ./etc ]]; then
-		curl -L http://mirrors.ustc.edu.cn/ubuntu-cdimage/ubuntu-core/releases/15.10/release/ubuntu-core-15.10-core-amd64.tar.gz | tar xzvf - -C . >/dev/null
-		echo 'deb http://mirrors.ustc.edu.cn/ubuntu wily main restricted universe multiverse' > ./etc/apt/sources.list
+		curl -L http://cdimage.ubuntu.com/ubuntu-core/releases/16.04/release/ubuntu-core-16.04-core-amd64.tar.gz | tar xzvf - -C . >/dev/null
+		echo 'deb http://mirrors.ustc.edu.cn/ubuntu xenial main restricted universe multiverse' > ./etc/apt/sources.list
 	fi
 	
 	if [[ ! -e ./nfs ]]; then

@@ -80,6 +80,8 @@ lxc.cgroup.devices.allow = c 1:8 rwm
 
 lxc.cap.drop = sys_admin net_admin mac_admin mac_override sys_time sys_module
 
+lxc.cgroup.cpuset.cpus = 0
+
 # lxc.cgroup.memory.kmem.limit_in_bytes = ${FOLK_BOMB_SPACE:-512m}
 # lxc.cgroup.memory.oom_control = 1
 # lxc.cgroup.memory.limit_in_bytes = $(( ${SOFT_MEMORY_QUOTA:-4294967296} * 4 ))
@@ -89,8 +91,8 @@ lxc.cap.drop = sys_admin net_admin mac_admin mac_override sys_time sys_module
 
 lxc.mount.auto = proc sys
 
-# lxc.mount.entry = devpts ${TARGET}/dev/pts devpts newinstance,ptmxmode=0666,nosuid,noexec 0 0
-# lxc.mount.entry = /var/lib/docklet/global/users/${USER_NAME}/home ${TARGET}/nfs none rbind,rw 0 0
+lxc.mount.entry = devpts ${TARGET}/dev/pts devpts newinstance,ptmxmode=0666,nosuid,noexec 0 0
+lxc.mount.entry = /var/lib/docklet/global/users/${USER_NAME}/home ${TARGET}/nfs none rbind,rw 0 0
 # lxc.mount.entry = /var/lib/docklet/global/users/${USER_NAME}/home/.docklet/nodes/${NODE_ID} ${TARGET}/nfs/.docklet/nodes/current none rbind,rw 0 0
 
 EOF
@@ -122,6 +124,7 @@ EOF
 	mkdir -p ${TARGET}/root/.ssh
 	
 	rsync -Ha ${DIR_NAME}/container-init ${TARGET}/sbin/init
+	echo "${@:-sleep 365d}" >> ${TARGET}/sbin/init
 	rsync -Ha ${DIR_NAME}/container-docklet ${TARGET}/usr/bin/docklet
 	rsync -Ha /var/lib/docklet/global/users/${USER_NAME}/ssh_keys/id_rsa ${TARGET}/root/.ssh/id_rsa
 	rsync -Ha /var/lib/docklet/global/users/${USER_NAME}/ssh_keys/authorized_keys ${TARGET}/root/.ssh/authorized_keys
