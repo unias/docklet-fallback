@@ -86,7 +86,7 @@ if [[ "${IP_DEV:-ovs-link}" == "ovs-link" ]]; then
 		ip link set dev ovs-link up
 		ip link set dev ovs-system up
 
-		ip link add vxlan-int type vxlan id 41 group 239.10.0.1 local 192.168.1.200 dstport 0 >/dev/null 2>&1 || true
+		ip link add vxlan-int type vxlan id 41 group 239.10.0.1 local ${HOST_IP} dstport 0 >/dev/null 2>&1 || true
 		ip link set dev vxlan-int up
 		ovs-vsctl add-port ovs-link vxlan-int
 	fi
