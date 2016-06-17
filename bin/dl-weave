@@ -12,6 +12,10 @@ USER_NAME=$(echo ${UUID} | awk -F\- '{print $1}') || true
 NAT_ID=$(echo ${UUID} | awk -F\- '{print $2}') || true
 NODE_ID=$(echo ${UUID} | awk -F\- '{print $3}') || true
 
+USERNAME_SIZE=$(echo -n "${USER_NAME}" | wc -c)
+
+[[ "$(( ${USERNAME_SIZE} <= 8 ))" == "1" ]]
+
 NAT_CONV=${IP_CONV:-\{print \"10.10.${NAT_ID}.\" ${NODE_ID}\"/\"16\}}
 NATADDR=$(echo ${UUID} | awk -F\- "${NAT_CONV}")
 NATADDR_NOMASK=$(echo ${NATADDR} | awk -F\/ '{print $1}')
@@ -39,7 +43,7 @@ lxc.autodev = 0
 lxc.network.type = veth
 lxc.network.veth.pair = ${UUID}
 lxc.network.name = eth0
-lxc.network.link = ${IP_DEV:-ovs-bridge}
+#lxc.network.link = ${IP_DEV:-ovs-bridge}
 lxc.network.ipv4 = ${NATADDR}
 lxc.network.ipv4.gateway = ${IP_GW:-10.10.0.1}
 lxc.network.flags = up
@@ -136,6 +140,7 @@ EOF
 	rsync -Ha /var/lib/docklet/global/users/${USER_NAME}/ssh_keys/authorized_keys ${TARGET}/root/.ssh/authorized_keys
 	
 	lxc-start -n ${UUID}
+	ovs-vsctl add-port ovs-link ${UUID} tag=${NAT_ID}
 	echo ${NATADDR_NOMASK}
 
 	rm -f /var/run/netns/${UUID}
@@ -172,6 +177,7 @@ EOF
 	# rm -f /var/run/netns/$NSPID
 	
 elif [[ "${TYPE}" == "stop" ]]; then
+	ovs-vsctl del-port ovs-link ${UUID}
 	lxc-stop -k -n ${UUID} >/dev/null 2>&1 || true
 	umount -l ${TARGET} >/dev/null 2>&1 || true
 	rm -rf ${TARGET} || true
