@@ -1,0 +1,77 @@
+#!/bin/bash
+
+set -e
+
+if which python2 >/dev/null; then
+	EXEC=python2
+else
+	EXEC=python3
+fi
+
+PYJSONPREF="import sys, json; obj = json.load(sys.stdin);"
+
+if [[ "$@" == "" ]]; then
+	echo -e "\033[34mUsage for lookup info:\033[0m docklet [clusterid|owner|info|hosts|status|sshkey]\n" > /dev/stderr
+	echo -e "\033[34mUsage for control cluster:\033[0m docklet [nfs|scaleout|scalein|restart|remove]\n" > /dev/stderr
+	true
+elif [[ "$@" == "clusterid" ]]; then
+	cat /etc/hosts | grep \ host- | awk -F\- '{print $2}' | awk -F\_ '{print $1}'
+elif [[ "$@" == "owner" ]]; then
+	cat /etc/hosts | grep \ host- | awk -F\_ '{print $2}'
+elif [[ "$@" == "mpi-flags" ]]; then
+	NUM=$(docklet hostnum)
+	NAT_ID=$(docklet clusterid)
+	HOSTS="10.10.${NAT_ID}.0"
+	for (( I = 1 ; I < ${NUM}; I ++ )); do
+		HOSTS="${HOSTS},10.10.${NAT_ID}.${I}"
+	done
+	echo "-hosts ${HOSTS} -n ${NUM}"
+elif [[ "$@" == "hostnum" ]]; then
+	docklet info | ${EXEC} -c "${PYJSONPREF} print(len(obj['data']['clusters'][0]['nodes']))" 2>/dev/null
+elif [[ "$@" == "status" ]]; then
+	NUM=$(docklet hostnum)
+	for (( I = 0 ; I < ${NUM} ; ++ I )); do
+		HOST="10.10.$(docklet clusterid).${I}"
+		echo -n "* docklet ${HOST} : "
+		if ping -c 1 -w 2 ${HOST} >/dev/null 2>&1; then echo "okay."; else echo "no response."; fi
+	done
+elif [[ "$@" == "info" ]]; then
+	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://10.10.0.1:8000/clusters 2>/dev/null
+elif [[ "$1" == "scaleout" ]]; then
+	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://10.10.0.1:8000/clusters/scaleout 2>/dev/null | ${EXEC} -c "${PYJSONPREF} print(obj['data']['ip'])" 2>/dev/null
+elif [[ "$1" == "scalein" ]]; then
+	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://10.10.0.1:8000/clusters/scalein 2>/dev/null | ${EXEC} -c "${PYJSONPREF} print(obj['data']['uuid'])" 2>/dev/null
+elif [[ "$1" == "remove" ]]; then
+	while docklet scalein >/dev/null; do echo 'Releasing a slave node ..'; done
+	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://10.10.0.1:8000/clusters/remove 2>/dev/null
+elif [[ "$@" == "restart" ]]; then
+	curl -F user=$(docklet owner) -F key=@${HOME}/.ssh/id_rsa http://10.10.0.1:8000/clusters/$(docklet clusterid)/restart 2>/dev/null
+elif [[ "$1" == "deps" ]]; then
+	shift; DEPENDS="$@"
+	if [[ "${DEPENDS}" != "" ]]; then
+		NON_EXIST=""
+		for DEB in ${DEPENDS}; do if ! dpkg -l ${DEB} 2>/dev/null | tail -n 1 | grep ^ii >/dev/null; then NON_EXIST="${NON_EXIST} ${DEB}"; fi; done
+		if [[ "${NON_EXIST}" != "" ]]; then
+			echo 'Downloading and installing dependencies ..' > /dev/stderr
+			if ! apt-get install -y ${DEPENDS}; then
+				apt-get update
+				if ! apt-get install -y ${DEPENDS}; then
+					echo 'Wrong dependency name!' > /dev/stderr
+					exit 1
+				fi
+			fi
+		fi
+	fi
+elif [[ "$1" == "async" ]]; then
+	shift
+	nohup $@ >/dev/null 2>&1 &
+elif [[ "$@" == "sshkey" ]]; then
+	cat ~/.ssh/id_rsa
+elif [[ "$@" == "nfs" ]]; then
+	cd /nfs && ls && bash
+else
+	echo "Error parsing commands: '$@'" > /dev/stderr
+	exit 1
+fi
+
+sleep 0.1 
