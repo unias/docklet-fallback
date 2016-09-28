@@ -1,0 +1,44 @@
+#!/bin/bash -x
+
+. /var/lib/docklet/global/docklet.conf
+
+function log {
+	echo -e "\033[34m$@\033[0m\n"
+}
+
+clear
+
+UUID='docklet-1-0'
+
+NAT_ID=$(echo $UUID | awk -F\- '{print $2}')
+NODE_ID=$(echo $UUID | awk -F\- '{print $3}')
+
+NAT_CONV=${IP_CONV:-\{print 10.10.${NAT_ID}.${NODE_ID}\"/\"16\}}
+NATADDR=$(echo ${UUID} | awk -F\- "${NAT_CONV}")
+
+log "# This is standard login interface:"
+curl -F user=docklet -F key=docklet "http://0.0.0.0:8000/clusters"
+echo ; read -p 'Press [Enter] to continue ..' ; clear
+
+log "# Creating clusters:"
+curl -F user=docklet -F key=docklet "http://0.0.0.0:8000/clusters/create"
+echo ; read -p 'Press [Enter] to continue ..' ; clear
+
+log "# Cluster information:"
+curl -F user=docklet -F key=docklet "http://0.0.0.0:8000/clusters"
+echo ; read -p 'Press [Enter] to continue ..' ; clear
+
+log "# Scaling clusters:"
+curl -F user=docklet -F key=docklet "http://0.0.0.0:8000/clusters/1/scaleout"
+echo ; read -p 'Press [Enter] to continue ..' ; clear
+
+log "# Try login clusters, nodes size should be 2:"
+ssh root@$(echo $NAT_ADDR | awk -F\/ '{print $1}') -i /var/lib/docklet/global/users/docklet/ssh_keys/id_rsa
+clear
+
+log "# Remove clusters:"
+curl -F user=docklet -F key=docklet "http://0.0.0.0:8000/clusters/1/scalein"
+curl -F user=docklet -F key=docklet "http://0.0.0.0:8000/clusters/remove"
+echo ; read -p 'Press [Enter] to continue ..' ; clear
+
+echo "All tests done."

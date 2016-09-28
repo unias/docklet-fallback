@@ -1,0 +1,171 @@
+#!/bin/bash -e
+
+DIR_NAME=$(dirname $0)
+CUR_DIR=$(pwd)
+
+DEPENDS="rsync cgroup-lite lxc lxc-templates lxcfs bridge-utils curl sshfs squashfs-tools netcat-openbsd net-tools psmisc" # openssh-server openvswitch-switch criu
+
+if ! dpkg -L ${DEPENDS} >/dev/null 2>&1; then apt-get install -y --no-install-recommends ${DEPENDS}; fi
+
+
+function log_msg {
+	TYPE=$1 && shift && COLOR=35
+	[[ "${TYPE}" == "INFO" ]] && COLOR=34
+	[[ "${TYPE}" == "WARN" ]] && COLOR=33
+	[[ "${TYPE}" == "ERROR" ]] && COLOR=31
+	echo -e "\033[${COLOR}m[${TYPE}] $@\033[0m" > /dev/stderr
+	[[ "${TYPE}" == "ERROR" ]] && exit 1
+	return 0
+}
+
+function get_address {
+	ADDRESS=`ip route | awk '{ if ($3=="'$(ip route | grep "^default via" | head -n 1 | awk '{print $5}')'") print $9 }' | tail -n 1`
+	echo ${ADDRESS:-10.10.0.1}
+	unset ADDRESS
+	# nmap -sP "${MACHINE_CIDR}" | grep report | awk '{print $NF}' | awk -F\( '{print $NF}' | awk -F\) '{print $1}'
+}
+
+HOST_IP=$(get_address); if [[ "$@" == "network" ]]; then echo ${HOST_IP}; exit 0; fi
+
+log_msg "INFO" "IP of this host is ${HOST_IP}."
+
+grep swapaccount=1 /proc/cmdline >/dev/null || log_msg "WARN" "Swap Account not enabled."
+
+log_msg "INFO" "Checking Environment for Docklet Cluster .."
+
+[[ "`whoami`" != "root" ]] && log_msg "ERROR" "Root previledge required!"
+
+ip link delete lxcbr0 >/dev/null 2>&1 || true
+
+log_msg "INFO" "Remounting NFS /var/lib/docklet/global .."
+
+mkdir -p /var/lib/docklet/global
+if ! mountpoint /var/lib/docklet/global -q; then `${NFS_MOUNT_CMD:-mount -o bind /mnt /var/lib/docklet/global}`; fi
+mkdir -p /var/lib/docklet/global/{users,machines/${HOST_IP}}
+rm -rf /var/run/netns
+ln -s /var/lib/docklet/global/machines/${HOST_IP} /var/run/netns
+
+touch /var/lib/docklet/global/docklet.conf
+. /var/lib/docklet/global/docklet.conf
+
+if [[ "${IP_DEV:-ovs-link}" == "ovs-link" ]]; then
+	log_msg "WARN" "Setting up for localhost."
+	
+	if [[ ! -e "/root/.ssh/id_rsa" ]] && [[ ! -e "/root/.ssh/authorized_keys" ]]; then
+		mv /root/.ssh/id_rsa /root/.ssh/id_rsa.bak 2>/dev/null || true
+		mv /root/.ssh/id_rsa.pub /root/.ssh/id_rsa.pub.bak 2>/dev/null || true
+		mv /root/.ssh/authorized_keys /root/.ssh/authorized_keys.bak 2>/dev/null || true
+		
+		echo -e '\n' | ssh-keygen -t rsa -P '' >/dev/null 2>&1
+		mv /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys
+	fi
+	
+	# ssh -p ${SSH_PORT:-22} -oStrictHostKeyChecking=no root@0.0.0.0 true
+	
+	if ! ip route 2>/dev/null | grep -e ovs-link -e 10.10.0.1 >/dev/null; then
+		#iptables -F
+		#iptables -t nat -F
+		iptables -t nat -D POSTROUTING -s 10.0.3.0/24 ! -d 10.0.3.0/24 -j MASQUERADE >/dev/null 2>&1 || true
+		iptables -t nat -D POSTROUTING -s 10.10.0.0/16 -j MASQUERADE >/dev/null 2>&1 || true
+		iptables -t nat -A POSTROUTING -s 10.10.0.0/16 -j MASQUERADE
+
+		ip link set ovs-link down 2>/dev/null || true
+		brctl delbr ovs-link 2>/dev/null || true
+		brctl addbr ovs-link
+		ip link set ovs-link up
+
+		# ovs-vsctl del-br ovs-link 2>/dev/null || true
+		# ovs-vsctl add-br ovs-link 2>/dev/null || true
+		# ovs-vsctl add-port ovs-link gre-${HOST} -- set interface gre-${HOST} type=gre options:remote_ip=${HOST}
+		# sleep 2s
+		
+		# brctl addif ovs-bridge ovs-link 2>/dev/null || true
+		ip addr add 10.10.0.1/16 dev ovs-link broadcast 10.10.255.255
+		
+		# ip link set dev ovs-link up
+		# ip link set dev ovs-system up
+
+		# ip link add vxlan-int type vxlan id 41 group 239.10.0.1 local ${HOST_IP} dstport 0 >/dev/null 2>&1 || true
+		# ip link set dev vxlan-int up
+		# ovs-vsctl add-port ovs-link vxlan-int
+	fi
+	
+	kill -9 $(ps aux | grep dnsmasq | grep lxcbr0 | awk '{print $2}') >/dev/null 2>&1 || true
+	kill -9 $(ps aux | grep dnsmasq | grep 10.10 | awk '{print $2}') >/dev/null 2>&1 || true
+	dnsmasq -u lxc-dnsmasq --strict-order --bind-interfaces --pid-file=/run/lxc/dl-dnsmasq.pid --listen-address 10.10.0.1 --except-interface=lo --interface=ovs-link --dhcp-authoritative >/dev/null 2>&1 || true
+fi
+
+# log_msg "INFO" "Setting up for local LVM .."
+# LOOP="/var/lib/docklet/local/dl-localdevmapper.lo"
+# if [[ ! -e "${LOOP}" ]]; then mkdir -p `dirname "${LOOP}"`; dd if=/dev/zero of=${LOOP} bs=1M seek=102400 count=0 ; fi
+# losetup /dev/loop0 ${LOOP} >/dev/null 2>&1 || true
+# vgcreate dl-devmapper /dev/loop0 >/dev/null 2>&1 || true
+
+# domainname $(echo ${NIS_SERVER} | awk '{print $2}') >/dev/null 2>&1
+
+function setup_rootfs {
+	set -e
+	
+	ROOTFS=/var/lib/docklet/local/filesystem
+	
+	mkdir -p ${ROOTFS}
+	
+	cd ${ROOTFS}
+	if [[ ! -e ./etc ]]; then
+		curl -L http://cdimage.ubuntu.com/ubuntu-base/releases/16.04/release/ubuntu-base-16.04-core-amd64.tar.gz | tar xzvf - -C . >/dev/null
+	fi
+	
+	if [[ ! -e ./nfs ]]; then
+		echo 'deb http://archive.ubuntu.com/ubuntu xenial main restricted universe multiverse' > ./etc/apt/sources.list
+		cp /etc/resolv.conf ./etc
+		chroot . apt-get update
+		chroot . apt-get install -y --no-install-recommends openssh-server bash-completion iproute2 vim-tiny net-tools psmisc curl python iputils-ping
+		sed -i 's/without-password/yes/g' ./etc/ssh/sshd_config
+		sed -i 's/prohibit-password/yes/g' ./etc/ssh/sshd_config
+		sed -i 's/#.*StrictHostKeyChecking ask/StrictHostKeyChecking no/g' ./etc/ssh/ssh_config
+		
+		mkdir -p nfs
+	fi
+
+	rm -rf dev/{console,null,zero,tty,random,urandom,ptmx}
+	mknod -m 622 dev/console c 5 1
+	mknod -m 666 dev/null c 1 3
+	mknod -m 666 dev/zero c 1 5
+	mknod -m 666 dev/ptmx c 5 2
+	mknod -m 666 dev/tty c 5 0
+	mknod -m 444 dev/random c 1 8
+	mknod -m 444 dev/urandom c 1 9
+
+	rm -rf dev/{fd,stdin,stdout,stderr}
+	ln -s /proc/self/fd/0 dev/stdin
+	ln -s /proc/self/fd/1 dev/stdout
+	ln -s /proc/self/fd/2 dev/stderr
+	ln -s /proc/self/fd dev/fd
+	
+	echo "LANG=en_US.UTF-8" > etc/default/locale
+	
+	cd ${CUR_DIR}
+}
+
+setup_rootfs
+
+#killall dl-httprest >/dev/null 2>&1 || true
+
+#log_msg "INFO" "Deamon launching .."
+#exec ${DIR_NAME}/dl-httprest
+
+#nohup ${DIR_NAME}/dl-httprest >/dev/null 2>&1 &
+
+log_msg "INFO" "Finish all initialization .."
+exit 0
+RECOVERY=`lxc-ls` || true
+
+if [[ "${RECOVERY}" != "" ]]; then
+	for UUID in ${RECOVERY}; do
+		if [[ "`lxc-info -n ${UUID} -p 2>/dev/null`" == "" ]]; then
+			log_msg "WARN" "Recoverying lxc - ${UUID} .."
+			${DIR_NAME}/dl-weave start ${UUID} >/dev/null 2>&1
+		fi
+	done
+fi
+
